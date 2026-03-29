@@ -1,0 +1,58 @@
+{
+  "materials": [
+    {
+      "id": "aac",
+      "name": "Autoclaved Aerated Concrete (AAC)",
+      "strength": 72,
+      "durability": 85,
+      "cost_per_unit": 45,
+      "unit": "sqft equivalent",
+      "notes": "Lightweight, good thermal insulation; moderate load-bearing."
+    },
+    {
+      "id": "red_brick",
+      "name": "Red Clay Brick",
+      "strength": 68,
+      "durability": 78,
+      "cost_per_unit": 38,
+      "unit": "sqft equivalent",
+      "notes": "Traditional masonry; widely available."
+    },
+    {
+      "id": "rcc",
+      "name": "Reinforced Cement Concrete (RCC)",
+      "strength": 95,
+      "durability": 92,
+      "cost_per_unit": 120,
+      "unit": "cum equivalent",
+      "notes": "High strength for frames and shear walls."
+    },
+    {
+      "id": "steel",
+      "name": "Structural Steel",
+      "strength": 98,
+      "durability": 88,
+      "cost_per_unit": 200,
+      "unit": "ton equivalent",
+      "notes": "Best strength-to-weight; corrosion protection required."
+    },
+    {
+      "id": "fly_ash",
+      "name": "Fly Ash Brick / Block",
+      "strength": 62,
+      "durability": 80,
+      "cost_per_unit": 32,
+      "unit": "sqft equivalent",
+      "notes": "Eco-friendly; suitable for non-load partitions."
+    },
+    {
+      "id": "precast",
+      "name": "Precast Concrete",
+      "strength": 88,
+      "durability": 90,
+      "cost_per_unit": 95,
+      "unit": "panel equivalent",
+      "notes": "Factory quality; fast erection for repetitive bays."
+    }
+  ]
+}
