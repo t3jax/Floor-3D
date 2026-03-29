@@ -24,9 +24,7 @@ const HomePage: React.FC = () => {
 
     try {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setOriginalImage(e.target?.result as string);
-      };
+      reader.onload = (e) => setOriginalImage(e.target?.result as string);
       reader.readAsDataURL(file);
 
       const processResult = await uploadFloorPlan(file);
@@ -44,87 +42,72 @@ const HomePage: React.FC = () => {
     }
   };
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
   const handleSaveMeasurements = () => {
-    if (result) {
-      const measurementData = {
-        totalArea: measurements.totalArea ? parseFloat(measurements.totalArea) : null,
-        floorHeight: parseFloat(measurements.floorHeight),
-        wallThickness: parseFloat(measurements.wallThickness),
-        timestamp: new Date().toISOString()
-      };
-      localStorage.setItem('floorplan_measurements', JSON.stringify(measurementData));
-      setShowMeasurementModal(false);
-    }
-  };
-
-  const handleSkipMeasurements = () => {
-    localStorage.removeItem('floorplan_measurements');
+    const data = {
+      totalArea: measurements.totalArea ? parseFloat(measurements.totalArea) : null,
+      floorHeight: parseFloat(measurements.floorHeight),
+      wallThickness: parseFloat(measurements.wallThickness),
+      timestamp: new Date().toISOString()
+    };
+    localStorage.setItem('floorplan_measurements', JSON.stringify(data));
     setShowMeasurementModal(false);
   };
 
+  // Success State
   if (result && result.success) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-8">
+        {/* Measurement Modal */}
         {showMeasurementModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Add Measurements (Optional)</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Provide actual measurements for more accurate cost estimation
-              </p>
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-md w-full mx-4">
+              <h3 className="text-xl font-semibold text-white mb-2">Add Measurements</h3>
+              <p className="text-slate-400 text-sm mb-6">Optional: For accurate cost estimation</p>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Total Built-Up Area (square meters)
-                  </label>
+                  <label className="block text-sm text-slate-300 mb-2">Total Area (m²)</label>
                   <input
                     type="number"
-                    step="0.01"
                     value={measurements.totalArea}
                     onChange={(e) => setMeasurements({...measurements, totalArea: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., 150.5"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Leave empty to use auto-detected dimensions</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Floor Height (meters)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={measurements.floorHeight}
-                    onChange={(e) => setMeasurements({...measurements, floorHeight: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="e.g., 150"
                   />
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Wall Thickness (meters)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={measurements.wallThickness}
-                    onChange={(e) => setMeasurements({...measurements, wallThickness: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-slate-300 mb-2">Floor Height (m)</label>
+                    <input
+                      type="number"
+                      value={measurements.floorHeight}
+                      onChange={(e) => setMeasurements({...measurements, floorHeight: e.target.value})}
+                      className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-300 mb-2">Wall Thickness (m)</label>
+                    <input
+                      type="number"
+                      value={measurements.wallThickness}
+                      onChange={(e) => setMeasurements({...measurements, wallThickness: e.target.value})}
+                      className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-6">
-                <button onClick={handleSkipMeasurements} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+              <div className="flex gap-4 mt-8">
+                <button
+                  onClick={() => { localStorage.removeItem('floorplan_measurements'); setShowMeasurementModal(false); }}
+                  className="flex-1 px-4 py-3 border border-slate-600 text-slate-300 rounded-lg hover:bg-slate-800 transition-colors"
+                >
                   Skip
                 </button>
-                <button onClick={handleSaveMeasurements} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <button
+                  onClick={handleSaveMeasurements}
+                  className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
                   Save
                 </button>
               </div>
@@ -132,243 +115,137 @@ const HomePage: React.FC = () => {
           </div>
         )}
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">Processing Complete</h2>
+        {/* Success Banner */}
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <svg className="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-white">Analysis Complete</h2>
+                <p className="text-slate-400 text-sm">Floor plan processed successfully</p>
+              </div>
+            </div>
             <button
               onClick={() => setShowMeasurementModal(true)}
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              className="text-sm text-indigo-400 hover:text-indigo-300"
             >
               Edit Measurements
             </button>
           </div>
-          <p className="text-gray-600">
-            Your floor plan has been analyzed successfully. View the results below:
-          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
-            <div className="text-3xl mb-2">✓</div>
-            <div className="text-2xl font-bold text-gray-900 mb-1">
-              {result.meta?.num_walls || result.snapped_segments?.length || 0}
-            </div>
-            <div className="text-sm text-gray-600">Walls Detected</div>
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-6">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <div className="text-3xl font-bold text-white">{result.meta?.num_walls || result.snapped_segments?.length || 0}</div>
+            <div className="text-slate-400 text-sm mt-1">Walls Detected</div>
           </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
-            <div className="text-3xl mb-2">📐</div>
-            <div className="text-2xl font-bold text-gray-900 mb-1">
-              {result.meta?.total_length ? Number(result.meta.total_length).toFixed(1) : '0'}m
-            </div>
-            <div className="text-sm text-gray-600">Total Length</div>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <div className="text-3xl font-bold text-white">{result.meta?.total_length ? Number(result.meta.total_length).toFixed(1) : '0'}m</div>
+            <div className="text-slate-400 text-sm mt-1">Total Length</div>
           </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
-            <div className="text-3xl mb-2">🏗️</div>
-            <div className="text-2xl font-bold text-gray-900 mb-1">
-              {result.meta?.total_volume ? Number(result.meta.total_volume).toFixed(1) : '0'}m³
-            </div>
-            <div className="text-sm text-gray-600">Volume</div>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <div className="text-3xl font-bold text-white">{result.meta?.total_volume ? Number(result.meta.total_volume).toFixed(1) : '0'}m³</div>
+            <div className="text-slate-400 text-sm mt-1">Volume</div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Link
-            to="/detection"
-            className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
-          >
-            <div className="flex items-start">
-              <div className="text-3xl mr-4">🔍</div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Detection Visualization
-                </h3>
-                <p className="text-sm text-gray-600">
-                  View the detected walls and layout structure
-                </p>
-              </div>
-            </div>
+        {/* Action Cards */}
+        <div className="grid grid-cols-2 gap-6">
+          <Link to="/detection" className="group bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-indigo-500/50 transition-colors">
+            <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">Detection View</h3>
+            <p className="text-slate-400 text-sm mt-2">View detected walls and structure</p>
           </Link>
-
-          <Link
-            to="/3d-model"
-            className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
-          >
-            <div className="flex items-start">
-              <div className="text-3xl mr-4">🏛️</div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  3D Model
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Explore the interactive 3D visualization
-                </p>
-              </div>
-            </div>
+          <Link to="/3d-model" className="group bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-indigo-500/50 transition-colors">
+            <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">3D Model</h3>
+            <p className="text-slate-400 text-sm mt-2">Explore interactive 3D visualization</p>
           </Link>
-
-          <Link
-            to="/materials"
-            className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
-          >
-            <div className="flex items-start">
-              <div className="text-3xl mr-4">🧱</div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Material Analysis
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Review cost estimates and material recommendations
-                </p>
-              </div>
-            </div>
+          <Link to="/materials" className="group bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-indigo-500/50 transition-colors">
+            <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">Cost Analysis</h3>
+            <p className="text-slate-400 text-sm mt-2">Material recommendations & pricing</p>
           </Link>
-
           <button
-            onClick={() => {
-              setResult(null);
-              setOriginalImage(null);
-              setError(null);
-            }}
-            className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow text-left"
+            onClick={() => { setResult(null); setOriginalImage(null); setError(null); }}
+            className="group bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-indigo-500/50 transition-colors text-left"
           >
-            <div className="flex items-start">
-              <div className="text-3xl mr-4">📤</div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Upload New Plan
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Analyze a different floor plan
-                </p>
-              </div>
-            </div>
+            <h3 className="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">New Analysis</h3>
+            <p className="text-slate-400 text-sm mt-2">Upload a different floor plan</p>
           </button>
         </div>
       </div>
     );
   }
 
+  // Upload State
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-2xl mx-auto pt-20">
       <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          Floor3D Analysis System
-        </h1>
-        <p className="text-lg text-gray-600">
-          Transform 2D floor plans into interactive 3D models with AI-powered analysis
-        </p>
+        <h1 className="text-4xl font-bold text-white mb-4">Floor3D</h1>
+        <p className="text-slate-400 text-lg">Transform 2D floor plans into 3D models with AI</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-3xl mb-3">📤</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Upload</h3>
-          <p className="text-sm text-gray-600">
-            Upload your 2D floor plan image in JPG, PNG, or PDF format
-          </p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-3xl mb-3">🔍</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Analyze</h3>
-          <p className="text-sm text-gray-600">
-            AI detects walls, rooms, and structural elements automatically
-          </p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-3xl mb-3">🏛️</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Visualize</h3>
-          <p className="text-sm text-gray-600">
-            Explore interactive 3D models with cost estimates
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-8">
+      <div
+        className="bg-slate-900 border-2 border-dashed border-slate-700 rounded-2xl p-16 hover:border-indigo-500/50 transition-colors cursor-pointer"
+        onClick={() => fileInputRef.current?.click()}
+      >
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,.pdf"
+          accept="image/*"
           onChange={handleFileUpload}
           className="hidden"
         />
 
         {!loading && !error && (
           <div className="text-center">
-            <div className="mb-6">
-              <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-slate-800 flex items-center justify-center">
+              <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Upload Your Floor Plan
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Drag and drop or click to select a file
-            </p>
-            <button
-              onClick={handleUploadClick}
-              className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Select File
-            </button>
+            <h3 className="text-xl font-semibold text-white mb-2">Upload Floor Plan</h3>
+            <p className="text-slate-400">Click to select or drag and drop</p>
+            <p className="text-slate-500 text-sm mt-4">Supports JPG, PNG</p>
           </div>
         )}
 
         {loading && (
-          <div className="text-center py-8">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
-            <p className="text-gray-700 font-medium">Analyzing floor plan...</p>
-            <p className="text-sm text-gray-500 mt-2">This may take a few moments</p>
+          <div className="text-center">
+            <div className="w-12 h-12 mx-auto mb-4 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-white font-medium">Analyzing floor plan...</p>
           </div>
         )}
 
         {error && (
-          <div className="text-center py-8">
-            <div className="text-red-500 text-4xl mb-4">⚠️</div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Processing Failed
-            </h3>
-            <p className="text-sm text-red-600 mb-6">{error}</p>
-            <button
-              onClick={handleUploadClick}
-              className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Try Again
-            </button>
+          <div className="text-center">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
+              <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+            <p className="text-white font-medium mb-2">Upload Failed</p>
+            <p className="text-red-400 text-sm">{error}</p>
           </div>
         )}
       </div>
 
-      <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-blue-900 mb-2">
-          Supported Features
-        </h3>
-        <ul className="space-y-2 text-sm text-blue-800">
-          <li className="flex items-start">
-            <span className="mr-2">✓</span>
-            <span>Automatic wall and room detection</span>
-          </li>
-          <li className="flex items-start">
-            <span className="mr-2">✓</span>
-            <span>Interactive 3D model visualization with Voyager mode</span>
-          </li>
-          <li className="flex items-start">
-            <span className="mr-2">✓</span>
-            <span>Multi-floor support with staircase detection</span>
-          </li>
-          <li className="flex items-start">
-            <span className="mr-2">✓</span>
-            <span>Material cost estimation and recommendations</span>
-          </li>
-          <li className="flex items-start">
-            <span className="mr-2">✓</span>
-            <span>Professional PDF report generation</span>
-          </li>
-        </ul>
+      <div className="mt-12 grid grid-cols-3 gap-6 text-center">
+        <div>
+          <div className="text-indigo-400 font-semibold mb-1">Step 1</div>
+          <div className="text-slate-400 text-sm">Upload floor plan</div>
+        </div>
+        <div>
+          <div className="text-indigo-400 font-semibold mb-1">Step 2</div>
+          <div className="text-slate-400 text-sm">AI detects walls</div>
+        </div>
+        <div>
+          <div className="text-indigo-400 font-semibold mb-1">Step 3</div>
+          <div className="text-slate-400 text-sm">View 3D model</div>
+        </div>
       </div>
     </div>
   );

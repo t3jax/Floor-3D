@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ProcessResult, GraphPayload, Point2D } from '../types';
+import { ProcessResult, Point2D } from '../types';
 
 const API_BASE = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000';
 

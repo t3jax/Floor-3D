@@ -46,16 +46,25 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
   const directionRef = useRef(new THREE.Vector3());
 
   const handleEnterVoyager = useCallback(() => {
-    if (pointerControlsRef.current && cameraRef.current) {
-      setVoyagerMode(true);
-      pointerControlsRef.current.lock();
-      
-      // Position camera at entrance (front-left corner)
-      const bounds = calculateBounds(graph.nodes);
-      const startX = bounds.minX * SCALE_FACTOR + 1;
-      const startZ = bounds.minY * SCALE_FACTOR + 1;
-      cameraRef.current.position.set(startX, EYE_LEVEL, startZ);
+    if (!pointerControlsRef.current || !cameraRef.current) {
+      alert('Voyager mode not available');
+      return;
     }
+    
+    // Position camera at center of floor plan
+    const bounds = calculateBounds(graph.nodes);
+    const centerX = ((bounds.minX + bounds.maxX) / 2) * SCALE_FACTOR;
+    const centerZ = ((bounds.minY + bounds.maxY) / 2) * SCALE_FACTOR;
+    cameraRef.current.position.set(centerX, EYE_LEVEL, centerZ);
+    
+    // Disable orbit controls
+    if (orbitControlsRef.current) {
+      orbitControlsRef.current.enabled = false;
+    }
+    
+    // Lock pointer
+    pointerControlsRef.current.lock();
+    setVoyagerMode(true);
   }, [graph.nodes]);
 
   const handleExitVoyager = useCallback(() => {
@@ -127,8 +136,10 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
     orbitControlsRef.current = orbitControls;
 
     // PointerLockControls (First-person Voyager mode)
-    const pointerControls = new PointerLockControls(camera, renderer.domElement);
+    // Uses document.body for proper pointer lock functionality
+    const pointerControls = new PointerLockControls(camera, document.body);
     pointerControlsRef.current = pointerControls;
+    scene.add(pointerControls.getObject());
 
     pointerControls.addEventListener('unlock', () => {
       setVoyagerMode(false);
@@ -420,7 +431,9 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
         currentMount.removeChild(renderer.domElement);
       }
       orbitControls.dispose();
-      pointerControls.dispose();
+      if (pointerControlsRef.current) {
+        pointerControlsRef.current.dispose();
+      }
       renderer.dispose();
     };
   }, [graph, width, height, showInteriorWalls, viewLevel, currentFloor]);
