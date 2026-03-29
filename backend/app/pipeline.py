@@ -12,7 +12,13 @@ from app.database import get_db
 import uuid
 from app.geometry_graph import build_graph_payload, graph_from_fallback
 from app.llm_prompt import build_material_explanation_prompt
-from app.materials import load_materials, recommendations_for_context
+from app.materials import (
+    load_materials, 
+    recommendations_for_context, 
+    estimate_construction_cost,
+    get_material_comparison,
+    calculate_wall_volume
+)
 from app.opencv_engine import detect_walls_opencv, has_meaningful_geometry
 from app.schemas import FallbackGraphInput, GraphPayload, MaterialRecommendation, ProcessResult
 
@@ -55,6 +61,35 @@ def _material_map_for_graph(graph: GraphPayload) -> tuple[dict[str, list[Materia
     return out, unique_exc
 
 
+def _calculate_cost_estimates(graph: GraphPayload) -> tuple[list[dict], float, list[dict]]:
+    """Calculate cost estimates for the floor plan."""
+    materials = load_materials()
+    
+    # Convert edges to dict format for cost calculation
+    edges_dict = [
+        {'length_px': e.length_px, 'kind': e.kind}
+        for e in graph.edges
+    ]
+    nodes_dict = [{'x': n.x, 'y': n.y} for n in graph.nodes]
+    
+    # Get cost estimates
+    cost_estimates, recommended_cost = estimate_construction_cost(
+        edges_dict,
+        nodes_dict,
+        materials,
+        has_second_floor=graph.has_second_floor
+    )
+    
+    # Get material comparisons
+    total_volume = calculate_wall_volume(edges_dict, nodes_dict)
+    if graph.has_second_floor:
+        total_volume *= 2
+    
+    material_comparisons = get_material_comparison(total_volume, materials)
+    
+    return cost_estimates, recommended_cost, material_comparisons
+
+
 def process_image_bytes(image_bytes: bytes) -> ProcessResult:
     arr = np.asarray(bytearray(image_bytes), dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -88,14 +123,29 @@ def process_image_bytes(image_bytes: bytes) -> ProcessResult:
         settings.snap_tolerance_px,
         det.has_second_floor,
         det.void_coordinates,
+        staircase_info={
+            'detected': det.staircase.detected if det.staircase else False,
+            'staircase_type': det.staircase.staircase_type if det.staircase else 'unknown',
+            'bounding_box': det.staircase.bounding_box if det.staircase else {},
+            'center': det.staircase.center if det.staircase else (0, 0),
+            'direction': det.staircase.direction if det.staircase else 'unknown',
+            'num_steps': det.staircase.num_steps if det.staircase else 17,
+        } if det.staircase else None
     )
     mats, exclusions = _material_map_for_graph(graph)
+    
+    # Calculate cost estimates
+    cost_estimates, recommended_cost, material_comparisons = _calculate_cost_estimates(graph)
     
     extra_context = ""
     if exclusions:
         extra_context += "The following materials were actively excluded from the recommendations for safety/reliability:\n"
         for exc in exclusions:
             extra_context += f"- {exc}\n"
+    
+    # Add cost information to context
+    extra_context += f"\n\nEstimated construction cost (recommended materials): ₹{recommended_cost:,.2f}\n"
+    extra_context += "Cost varies based on material choice - see cost estimates for details.\n"
             
     prompt = build_material_explanation_prompt(graph, mats, extra_context=extra_context)
 
@@ -129,6 +179,9 @@ def process_image_bytes(image_bytes: bytes) -> ProcessResult:
         snapped_segments=det.snapped_segments,
         detection_mode="opencv",
         material_recommendations=mats,
+        cost_estimates=cost_estimates,
+        total_construction_cost=recommended_cost,
+        material_comparisons=material_comparisons,
         llm_prompt=prompt,
         meta={
             "image_shape": list(det.image_shape),
@@ -144,11 +197,16 @@ def process_fallback(payload: FallbackGraphInput) -> ProcessResult:
     graph = graph_from_fallback(nodes, payload.edges, rooms_spec)
     mats, exclusions = _material_map_for_graph(graph)
     
+    # Calculate cost estimates for fallback mode too
+    cost_estimates, recommended_cost, material_comparisons = _calculate_cost_estimates(graph)
+    
     extra_context = ""
     if exclusions:
         extra_context += "The following materials were actively excluded from the recommendations for safety/reliability:\n"
         for exc in exclusions:
             extra_context += f"- {exc}\n"
+    
+    extra_context += f"\n\nEstimated construction cost (recommended materials): ₹{recommended_cost:,.2f}\n"
             
     prompt = build_material_explanation_prompt(graph, mats, extra_context=extra_context)
 
@@ -158,6 +216,9 @@ def process_fallback(payload: FallbackGraphInput) -> ProcessResult:
         graph=graph,
         detection_mode="fallback",
         material_recommendations=mats,
+        cost_estimates=cost_estimates,
+        total_construction_cost=recommended_cost,
+        material_comparisons=material_comparisons,
         llm_prompt=prompt,
         meta={"snap_tolerance_px": settings.snap_tolerance_px},
     )

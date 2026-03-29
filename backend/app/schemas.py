@@ -24,6 +24,16 @@ class RoomRegion(BaseModel):
     centroid: Point2D
 
 
+class StaircaseData(BaseModel):
+    """Detected staircase information."""
+    detected: bool = False
+    type: Literal["straight", "l_shaped", "spiral", "unknown"] = "unknown"
+    bounding_box: dict = Field(default_factory=lambda: {"x": 0, "y": 0, "width": 0, "height": 0})
+    center: Point2D = Field(default_factory=lambda: Point2D(x=0, y=0))
+    direction: Literal["up", "down", "unknown"] = "unknown"
+    num_steps: int = 17  # Default for 3m height with 18cm steps
+
+
 class GraphPayload(BaseModel):
     nodes: list[Point2D]
     edges: list[WallEdge]
@@ -31,6 +41,7 @@ class GraphPayload(BaseModel):
     gaps: list[Point2D] | None = None
     has_second_floor: bool = False
     void_coordinates: tuple[float, float] | None = None
+    staircase: StaircaseData | None = None
 
 
 class MaterialEntry(BaseModel):
@@ -52,6 +63,31 @@ class MaterialRecommendation(BaseModel):
     cost_per_unit: float
 
 
+class CostEstimate(BaseModel):
+    """Cost estimate for a material choice."""
+    material_id: str
+    material_name: str
+    total_volume_m3: float
+    unit_cost: float
+    total_cost: float
+    wall_type: str
+    strength: float = 0.0
+    durability: float = 0.0
+
+
+class MaterialComparison(BaseModel):
+    """Material comparison with pros/cons."""
+    material_id: str
+    material_name: str
+    estimated_cost: float
+    cost_per_unit: float
+    unit: str
+    rating: str
+    color: str
+    pros: list[str] = Field(default_factory=list)
+    cons: list[str] = Field(default_factory=list)
+
+
 class ProcessResult(BaseModel):
     success: bool
     message: str = ""
@@ -60,6 +96,9 @@ class ProcessResult(BaseModel):
     snapped_segments: list[tuple[float, float, float, float]] = Field(default_factory=list)
     detection_mode: Literal["opencv", "fallback"] = "opencv"
     material_recommendations: dict[str, list[MaterialRecommendation]] = Field(default_factory=dict)
+    cost_estimates: list[dict] = Field(default_factory=list)
+    total_construction_cost: float = 0.0
+    material_comparisons: list[dict] = Field(default_factory=list)
     llm_prompt: str = ""
     meta: dict[str, Any] = Field(default_factory=dict)
     project_id: str | None = None

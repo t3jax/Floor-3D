@@ -1,15 +1,29 @@
 """
 Material DB + tradeoff score: (Strength * 0.6 + Durability * 0.4) / Cost
+Cost estimation based on wall dimensions
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from dataclasses import dataclass
 
 from app.config import settings
 from app.schemas import MaterialEntry, MaterialRecommendation
 from app.database import get_db
+
+
+@dataclass
+class CostEstimate:
+    """Cost estimate for a material choice"""
+    material_id: str
+    material_name: str
+    total_volume_m3: float
+    unit_cost: float
+    total_cost: float
+    wall_type: str  # 'exterior', 'interior', or 'all'
+
 
 def load_materials(path: Path | None = None) -> list[MaterialEntry]:
     # We now fetch from our SQLite Database instead of the JSON
@@ -34,6 +48,202 @@ def score_material(strength: float, durability: float, cost: float) -> float:
     if cost <= 0:
         return 0.0
     return (strength * 0.6 + durability * 0.4) / cost
+
+
+def calculate_wall_volume(
+    edges: list,
+    nodes: list,
+    wall_kind: str | None = None,
+    wall_height_m: float = 3.0,
+    wall_thickness_m: float = 0.23,  # Standard brick wall thickness
+    px_to_m_scale: float = 0.01,  # 1 pixel = 0.01 meters (adjustable)
+) -> float:
+    """
+    Calculate total wall volume in cubic meters.
+    
+    Args:
+        edges: List of wall edge dictionaries with 'length_px' and 'kind'
+        nodes: List of node points
+        wall_kind: Filter by wall type ('exterior', 'interior', or None for all)
+        wall_height_m: Wall height in meters (default 3m for standard floor)
+        wall_thickness_m: Wall thickness in meters
+        px_to_m_scale: Scale factor to convert pixels to meters
+    
+    Returns:
+        Total volume in cubic meters
+    """
+    total_length_px = 0.0
+    
+    for edge in edges:
+        if wall_kind is None or edge.get('kind') == wall_kind:
+            total_length_px += edge.get('length_px', 0)
+    
+    # Convert to meters
+    total_length_m = total_length_px * px_to_m_scale
+    
+    # Volume = length × height × thickness
+    volume_m3 = total_length_m * wall_height_m * wall_thickness_m
+    
+    return round(volume_m3, 2)
+
+
+def estimate_construction_cost(
+    edges: list,
+    nodes: list,
+    materials: list[MaterialEntry],
+    has_second_floor: bool = False,
+) -> tuple[list[dict], float]:
+    """
+    Estimate construction costs for different material choices.
+    
+    Returns:
+        Tuple of (list of cost estimates per material, recommended total cost)
+    """
+    # Calculate volumes
+    exterior_volume = calculate_wall_volume(edges, nodes, wall_kind='exterior')
+    interior_volume = calculate_wall_volume(edges, nodes, wall_kind='interior')
+    total_volume = exterior_volume + interior_volume
+    
+    # If second floor, double the volume
+    if has_second_floor:
+        exterior_volume *= 2
+        interior_volume *= 2
+        total_volume *= 2
+    
+    cost_estimates = []
+    
+    for material in materials:
+        # Calculate cost for this material
+        material_cost = total_volume * material.cost_per_unit
+        
+        cost_estimates.append({
+            'material_id': material.id,
+            'material_name': material.name,
+            'total_volume_m3': total_volume,
+            'unit_cost': material.cost_per_unit,
+            'total_cost': round(material_cost, 2),
+            'wall_type': 'all',
+            'strength': material.strength,
+            'durability': material.durability,
+        })
+    
+    # Sort by cost
+    cost_estimates.sort(key=lambda x: x['total_cost'])
+    
+    # Recommended cost: use best score material
+    best_score_material = None
+    best_score = -1
+    for m in materials:
+        s = score_material(m.strength, m.durability, m.cost_per_unit)
+        if s > best_score:
+            best_score = s
+            best_score_material = m
+    
+    recommended_cost = total_volume * best_score_material.cost_per_unit if best_score_material else 0
+    
+    return cost_estimates, round(recommended_cost, 2)
+
+
+def get_material_comparison(
+    total_volume: float,
+    materials: list[MaterialEntry],
+) -> list[dict]:
+    """
+    Generate a comparison of costs for different materials.
+    
+    Returns:
+        List of comparisons showing "If you use X material, it will cost Y"
+    """
+    comparisons = []
+    
+    for material in materials:
+        cost = total_volume * material.cost_per_unit
+        
+        # Determine cost rating
+        if cost < 50000:
+            rating = "Budget-Friendly"
+            color = "green"
+        elif cost < 150000:
+            rating = "Moderate"
+            color = "orange"
+        else:
+            rating = "Premium"
+            color = "red"
+        
+        comparisons.append({
+            'material_id': material.id,
+            'material_name': material.name,
+            'estimated_cost': round(cost, 2),
+            'cost_per_unit': material.cost_per_unit,
+            'unit': material.unit,
+            'rating': rating,
+            'color': color,
+            'pros': get_material_pros(material),
+            'cons': get_material_cons(material),
+        })
+    
+    return sorted(comparisons, key=lambda x: x['estimated_cost'])
+
+
+def get_material_pros(material: MaterialEntry) -> list[str]:
+    """Get pros for a material based on its properties."""
+    pros = []
+    
+    if material.strength >= 8:
+        pros.append("Excellent structural strength")
+    elif material.strength >= 5:
+        pros.append("Good load-bearing capacity")
+    
+    if material.durability >= 8:
+        pros.append("Outstanding durability")
+    elif material.durability >= 6:
+        pros.append("Long-lasting")
+    
+    if material.cost_per_unit <= 3000:
+        pros.append("Very cost-effective")
+    elif material.cost_per_unit <= 5000:
+        pros.append("Affordable")
+    
+    if material.id in ['aac', 'fly_ash']:
+        pros.append("Eco-friendly option")
+        pros.append("Good thermal insulation")
+    
+    if material.id == 'steel':
+        pros.append("Best strength-to-weight ratio")
+        pros.append("Fast construction")
+    
+    if material.id == 'precast':
+        pros.append("Factory-controlled quality")
+        pros.append("Reduced construction time")
+    
+    return pros[:3]  # Return top 3 pros
+
+
+def get_material_cons(material: MaterialEntry) -> list[str]:
+    """Get cons for a material based on its properties."""
+    cons = []
+    
+    if material.strength < 5:
+        cons.append("Not suitable for load-bearing walls")
+    
+    if material.durability < 5:
+        cons.append("May require frequent maintenance")
+    
+    if material.cost_per_unit > 8000:
+        cons.append("High initial investment")
+    
+    if material.id in ['aac', 'fly_ash']:
+        cons.append("Not for multi-storey structures")
+    
+    if material.id == 'steel':
+        cons.append("Requires corrosion protection")
+        cons.append("Higher thermal conductivity")
+    
+    if material.id == 'red_brick':
+        cons.append("Slower construction")
+        cons.append("Higher water absorption")
+    
+    return cons[:2]  # Return top 2 cons
 
 
 def top_k_materials(

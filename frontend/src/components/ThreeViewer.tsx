@@ -1,222 +1,536 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { GraphPayload, WallEdge, Point2D } from '../types';
+import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls';
+import { GraphPayload, WallEdge, Point2D, StaircaseData } from '../types';
 
 interface ThreeViewerProps {
   graph: GraphPayload;
   width?: number;
   height?: number;
+  totalCost?: number;
 }
+
+// Constants
+const WALL_HEIGHT = 3.0; // 3 meters per floor
+const WALL_THICKNESS = 0.2;
+const SCALE_FACTOR = 0.01; // Convert pixels to meters
+const EYE_LEVEL = 1.6; // Human eye level in meters
+const MOVE_SPEED = 5.0;
+const STAIR_STEP_HEIGHT = 0.18; // 18cm per step
+
+type ViewLevel = 'level0' | 'level1' | 'all';
 
 const ThreeViewer: React.FC<ThreeViewerProps> = ({ 
   graph, 
   width = 800, 
-  height = 600 
+  height = 600,
+  totalCost = 0
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const [showInteriorWalls, setShowInteriorWalls] = useState(true);
+  const [viewLevel, setViewLevel] = useState<ViewLevel>('all');
+  const [voyagerMode, setVoyagerMode] = useState(false);
+  const [currentFloor, setCurrentFloor] = useState(0);
+  
+  // Refs for Voyager mode
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const frameRef = useRef<number | null>(null);
-  const [fpMode, setFpMode] = useState(false);
+  const orbitControlsRef = useRef<OrbitControls | null>(null);
+  const pointerControlsRef = useRef<PointerLockControls | null>(null);
+  const wallMeshesRef = useRef<THREE.Mesh[]>([]);
+  const staircaseBoundsRef = useRef<THREE.Box3 | null>(null);
+  const moveStateRef = useRef({ forward: false, backward: false, left: false, right: false });
+  const velocityRef = useRef(new THREE.Vector3());
+  const directionRef = useRef(new THREE.Vector3());
+
+  const handleEnterVoyager = useCallback(() => {
+    if (pointerControlsRef.current && cameraRef.current) {
+      setVoyagerMode(true);
+      pointerControlsRef.current.lock();
+      
+      // Position camera at entrance (front-left corner)
+      const bounds = calculateBounds(graph.nodes);
+      const startX = bounds.minX * SCALE_FACTOR + 1;
+      const startZ = bounds.minY * SCALE_FACTOR + 1;
+      cameraRef.current.position.set(startX, EYE_LEVEL, startZ);
+    }
+  }, [graph.nodes]);
+
+  const handleExitVoyager = useCallback(() => {
+    if (pointerControlsRef.current) {
+      pointerControlsRef.current.unlock();
+      setVoyagerMode(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!mountRef.current || !graph) return;
+
+    const currentMount = mountRef.current;
 
     // Scene setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf5f5f5);
     sceneRef.current = scene;
 
-    // Camera setup
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      width / height,
-      0.1,
-      100000
-    );
-    
-    // Calculate bounds to center camera
+    // Calculate bounds
     const bounds = calculateBounds(graph.nodes);
-    const centerX = (bounds.minX + bounds.maxX) / 2;
-    const centerY = (bounds.minY + bounds.maxY) / 2;
-    const maxDim = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+    const planeCenterX = ((bounds.minX + bounds.maxX) / 2) * SCALE_FACTOR;
+    const planeCenterZ = ((bounds.minY + bounds.maxY) / 2) * SCALE_FACTOR;
+    const planeSizeX = (bounds.maxX - bounds.minX) * SCALE_FACTOR;
+    const planeSizeZ = (bounds.maxY - bounds.minY) * SCALE_FACTOR;
     
-    camera.position.set(centerX, centerY, maxDim * 2);
-    camera.lookAt(centerX, centerY, 0);
+    // Camera
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    camera.position.set(planeCenterX + 15, 18, planeCenterZ + 15);
+    camera.lookAt(planeCenterX, 0, planeCenterZ);
+    cameraRef.current = camera;
 
-    // Renderer setup
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    currentMount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
-    mountRef.current.appendChild(renderer.domElement);
 
-    // Lighting (Brightened for sketch look)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
     
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(centerX + 100, centerY - 100, 200);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    directionalLight.position.set(10, 20, 10);
     directionalLight.castShadow = true;
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.camera.near = 0.5;
+    directionalLight.shadow.camera.far = 100;
+    directionalLight.shadow.camera.left = -30;
+    directionalLight.shadow.camera.right = 30;
+    directionalLight.shadow.camera.top = 30;
+    directionalLight.shadow.camera.bottom = -30;
     scene.add(directionalLight);
+    
+    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0xcccccc, 0.4);
+    scene.add(hemisphereLight);
 
-    // OrbitControls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.target.set(centerX, centerY, 0);
+    // OrbitControls (Third-person view)
+    const orbitControls = new OrbitControls(camera, renderer.domElement);
+    orbitControls.enableDamping = true;
+    orbitControls.dampingFactor = 0.05;
+    orbitControls.target.set(planeCenterX, WALL_HEIGHT / 2, planeCenterZ);
+    orbitControls.maxPolarAngle = Math.PI / 2;
+    orbitControls.update();
+    orbitControlsRef.current = orbitControls;
 
-    // Playable Character Avatar
-    const charGeo = new THREE.CapsuleGeometry(12, 24, 4, 8);
-    charGeo.rotateX(Math.PI / 2); // Stand upright along Z-axis
-    const charMat = new THREE.MeshLambertMaterial({ color: 0x00bcd4 }); // Cyan character
-    const character = new THREE.Mesh(charGeo, charMat);
-    character.position.set(centerX, centerY, 30);
-    character.castShadow = true;
-    scene.add(character);
+    // PointerLockControls (First-person Voyager mode)
+    const pointerControls = new PointerLockControls(camera, renderer.domElement);
+    pointerControlsRef.current = pointerControls;
 
-    // Keyboard state for Pilot Mode
-    const keys = { w: false, a: false, s: false, d: false };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      if (typeof (keys as any)[key] !== 'undefined') (keys as any)[key] = true;
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      if (typeof (keys as any)[key] !== 'undefined') (keys as any)[key] = false;
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    pointerControls.addEventListener('unlock', () => {
+      setVoyagerMode(false);
+    });
 
-    // Create floor plane
-    if (graph.rooms.length > 0) {
-      graph.rooms.forEach(room => {
-        const floorGeometry = createFloorGeometry(room.polygon);
-        if (floorGeometry) {
-          const floorMaterial = new THREE.MeshLambertMaterial({ 
-            color: 0xe8e8e8,
-            side: THREE.DoubleSide 
-          });
-          const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
-          floorMesh.position.z = 0;
-          floorMesh.receiveShadow = true;
-          scene.add(floorMesh);
-        }
+    // Floor planes (Level 0 and Level 1)
+    const floorPadding = 1.1;
+    const floorGeometry = new THREE.PlaneGeometry(
+      (planeSizeX || 20) * floorPadding, 
+      (planeSizeZ || 20) * floorPadding
+    );
+    
+    // Level 0 floor
+    const floor0Material = new THREE.MeshStandardMaterial({ 
+      color: 0xf8f7f4, 
+      roughness: 1.0,
+      metalness: 0.0
+    });
+    const floor0 = new THREE.Mesh(floorGeometry, floor0Material);
+    floor0.rotation.x = -Math.PI / 2;
+    floor0.position.set(planeCenterX, 0, planeCenterZ);
+    floor0.receiveShadow = true;
+    floor0.userData = { level: 0 };
+    scene.add(floor0);
+
+    // Level 1 floor (only if second floor exists)
+    if (graph.has_second_floor) {
+      const floor1Material = new THREE.MeshStandardMaterial({ 
+        color: 0xf0eeeb, 
+        roughness: 1.0,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.7
       });
-    } else {
-      // Fallback floor
-      const floorGeometry = new THREE.PlaneGeometry(maxDim, maxDim);
-      const floorMaterial = new THREE.MeshLambertMaterial({ color: 0xe8e8e8 });
-      const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
-      floorMesh.position.set(centerX, centerY, 0);
-      floorMesh.receiveShadow = true;
-      scene.add(floorMesh);
+      const floor1 = new THREE.Mesh(floorGeometry.clone(), floor1Material);
+      floor1.rotation.x = -Math.PI / 2;
+      floor1.position.set(planeCenterX, WALL_HEIGHT, planeCenterZ);
+      floor1.receiveShadow = true;
+      floor1.userData = { level: 1 };
+      scene.add(floor1);
     }
 
-    // Create walls
+    // Wall materials with AEC-style edges
+    const wallMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xf0eeeb, 
+      roughness: 0.85, 
+      metalness: 0.0,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1
+    });
+
+    const transparentWallMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xf0eeeb, 
+      roughness: 0.85, 
+      metalness: 0.0,
+      transparent: true,
+      opacity: 0.5,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1
+    });
+
+    const wallMeshes: THREE.Mesh[] = [];
+
+    // Create Level 0 walls
     graph.edges.forEach((wall: WallEdge) => {
+      if (!showInteriorWalls && wall.kind === 'interior') return;
+      
       const startNode = graph.nodes[wall.a];
       const endNode = graph.nodes[wall.b];
       
       if (startNode && endNode) {
-        const wallMesh = createWallMesh(startNode, endNode, wall.kind, false);
-        wallMesh.castShadow = true;
-        wallMesh.receiveShadow = true;
-        scene.add(wallMesh);
-
-        // Extrude inferred 2nd level for exterior walls
-        if ((graph as any).has_second_floor && wall.kind === 'exterior') {
-          const upperWallMesh = createWallMesh(startNode, endNode, wall.kind, true);
-          upperWallMesh.position.z += 100;
-          scene.add(upperWallMesh);
-        }
+        const wallGroup = createAECWall(
+          startNode.x * SCALE_FACTOR, 
+          startNode.y * SCALE_FACTOR, 
+          endNode.x * SCALE_FACTOR, 
+          endNode.y * SCALE_FACTOR,
+          wallMaterial,
+          wall.kind,
+          0 // Level 0
+        );
+        wallGroup.userData = { level: 0, kind: wall.kind };
+        scene.add(wallGroup);
+        
+        // Store mesh for collision detection
+        wallGroup.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            wallMeshes.push(child);
+          }
+        });
       }
     });
 
-    if ((graph as any).has_second_floor) {
-      // 3D Sprite Label
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
-        ctx.fillRect(0, 0, 512, 128);
-        ctx.font = 'bold 44px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#22d3ee';
-        ctx.fillText('INFERRED 2ND LEVEL', 256, 64);
-      }
-      const tex = new THREE.CanvasTexture(canvas);
-      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
-      const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(300, 75, 1);
-      sprite.position.set(centerX, centerY, 220); // Hover above
-      scene.add(sprite);
+    // Create Level 1 walls (semi-transparent shell) if second floor exists
+    if (graph.has_second_floor) {
+      graph.edges.forEach((wall: WallEdge) => {
+        // Only exterior walls for second floor shell
+        if (wall.kind !== 'exterior') return;
+        
+        const startNode = graph.nodes[wall.a];
+        const endNode = graph.nodes[wall.b];
+        
+        if (startNode && endNode) {
+          const wallGroup = createAECWall(
+            startNode.x * SCALE_FACTOR, 
+            startNode.y * SCALE_FACTOR, 
+            endNode.x * SCALE_FACTOR, 
+            endNode.y * SCALE_FACTOR,
+            transparentWallMaterial,
+            wall.kind,
+            1 // Level 1
+          );
+          wallGroup.userData = { level: 1, kind: wall.kind };
+          scene.add(wallGroup);
+        }
+      });
     }
 
-    // Animation loop
-    const animate = () => {
-      frameRef.current = requestAnimationFrame(animate);
-      
-      // Character movement (W goes up the screen which is -Y)
-      const speed = 4.0;
-      if (keys.w) character.position.y -= speed;
-      if (keys.s) character.position.y += speed;
-      if (keys.a) character.position.x -= speed;
-      if (keys.d) character.position.x += speed;
+    wallMeshesRef.current = wallMeshes;
 
-      if (fpMode) {
-        controls.enabled = false;
-        // First Person: Camera sits inside the avatar's head and looks forward along -Y
-        camera.position.set(character.position.x, character.position.y + 10, character.position.z + 15);
-        camera.lookAt(character.position.x, character.position.y - 100, character.position.z + 15);
-      } else {
-        // Third Person Orbit
-        controls.enabled = true;
-        controls.target.copy(character.position);
-        controls.update();
+    // Generate staircase if detected
+    let staircaseGroup: THREE.Group | null = null;
+    if (graph.staircase?.detected || graph.has_second_floor) {
+      const staircaseData = graph.staircase || createDefaultStaircase(graph, bounds);
+      staircaseGroup = createStaircase(staircaseData, SCALE_FACTOR);
+      scene.add(staircaseGroup);
+      
+      // Store staircase bounds for collision/climbing
+      const box = new THREE.Box3().setFromObject(staircaseGroup);
+      staircaseBoundsRef.current = box;
+    }
+
+    // Keyboard event handlers for Voyager mode
+    const onKeyDown = (event: KeyboardEvent) => {
+      switch (event.code) {
+        case 'KeyW':
+        case 'ArrowUp':
+          moveStateRef.current.forward = true;
+          break;
+        case 'KeyS':
+        case 'ArrowDown':
+          moveStateRef.current.backward = true;
+          break;
+        case 'KeyA':
+        case 'ArrowLeft':
+          moveStateRef.current.left = true;
+          break;
+        case 'KeyD':
+        case 'ArrowRight':
+          moveStateRef.current.right = true;
+          break;
+        case 'Escape':
+          if (pointerControlsRef.current?.isLocked) {
+            pointerControlsRef.current.unlock();
+          }
+          break;
       }
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      switch (event.code) {
+        case 'KeyW':
+        case 'ArrowUp':
+          moveStateRef.current.forward = false;
+          break;
+        case 'KeyS':
+        case 'ArrowDown':
+          moveStateRef.current.backward = false;
+          break;
+        case 'KeyA':
+        case 'ArrowLeft':
+          moveStateRef.current.left = false;
+          break;
+        case 'KeyD':
+        case 'ArrowRight':
+          moveStateRef.current.right = false;
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+
+    // Animation loop
+    let prevTime = performance.now();
+    
+    const animate = () => {
+      requestAnimationFrame(animate);
+      
+      const time = performance.now();
+      const delta = (time - prevTime) / 1000;
+      prevTime = time;
+
+      // Voyager mode movement
+      if (pointerControlsRef.current?.isLocked) {
+        velocityRef.current.x -= velocityRef.current.x * 10.0 * delta;
+        velocityRef.current.z -= velocityRef.current.z * 10.0 * delta;
+
+        directionRef.current.z = Number(moveStateRef.current.forward) - Number(moveStateRef.current.backward);
+        directionRef.current.x = Number(moveStateRef.current.right) - Number(moveStateRef.current.left);
+        directionRef.current.normalize();
+
+        if (moveStateRef.current.forward || moveStateRef.current.backward) {
+          velocityRef.current.z -= directionRef.current.z * MOVE_SPEED * delta * 50;
+        }
+        if (moveStateRef.current.left || moveStateRef.current.right) {
+          velocityRef.current.x -= directionRef.current.x * MOVE_SPEED * delta * 50;
+        }
+
+        // Calculate new position
+        const newPos = camera.position.clone();
+        pointerControlsRef.current.moveRight(-velocityRef.current.x * delta);
+        pointerControlsRef.current.moveForward(-velocityRef.current.z * delta);
+
+        // Simple collision detection
+        const playerRadius = 0.3;
+        const playerBox = new THREE.Box3().setFromCenterAndSize(
+          camera.position,
+          new THREE.Vector3(playerRadius * 2, 1.8, playerRadius * 2)
+        );
+
+        let collision = false;
+        for (const wallMesh of wallMeshesRef.current) {
+          const wallBox = new THREE.Box3().setFromObject(wallMesh);
+          if (playerBox.intersectsBox(wallBox)) {
+            collision = true;
+            break;
+          }
+        }
+
+        if (collision) {
+          camera.position.copy(newPos);
+        }
+
+        // Check staircase climbing
+        if (staircaseBoundsRef.current) {
+          const playerPoint = new THREE.Vector3(camera.position.x, 0, camera.position.z);
+          const stairBox2D = new THREE.Box3(
+            new THREE.Vector3(staircaseBoundsRef.current.min.x, 0, staircaseBoundsRef.current.min.z),
+            new THREE.Vector3(staircaseBoundsRef.current.max.x, 0, staircaseBoundsRef.current.max.z)
+          );
+          
+          if (stairBox2D.containsPoint(playerPoint)) {
+            // Calculate height based on position in staircase
+            const progress = (camera.position.z - staircaseBoundsRef.current.min.z) / 
+                           (staircaseBoundsRef.current.max.z - staircaseBoundsRef.current.min.z);
+            const targetY = EYE_LEVEL + progress * WALL_HEIGHT;
+            camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetY, 0.1);
+            setCurrentFloor(progress > 0.5 ? 1 : 0);
+          } else {
+            // Reset to current floor level
+            const targetY = EYE_LEVEL + currentFloor * WALL_HEIGHT;
+            camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetY, 0.1);
+          }
+        }
+      } else {
+        orbitControls.update();
+      }
+
+      // Update visibility based on view level
+      scene.traverse((object) => {
+        if (object.userData.level !== undefined) {
+          switch (viewLevel) {
+            case 'level0':
+              object.visible = object.userData.level === 0;
+              break;
+            case 'level1':
+              object.visible = object.userData.level === 1 || object.userData.isStaircase;
+              break;
+            case 'all':
+            default:
+              object.visible = true;
+              break;
+          }
+        }
+      });
 
       renderer.render(scene, camera);
     };
-
     animate();
 
     // Cleanup
     return () => {
-      if (frameRef.current) {
-        cancelAnimationFrame(frameRef.current);
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keyup', onKeyUp);
+      
+      if (currentMount && renderer.domElement) {
+        currentMount.removeChild(renderer.domElement);
       }
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      if (mountRef.current && renderer.domElement) {
-        mountRef.current.removeChild(renderer.domElement);
-      }
-      controls.dispose();
+      orbitControls.dispose();
+      pointerControls.dispose();
       renderer.dispose();
     };
-  }, [graph, width, height, fpMode]);
+  }, [graph, width, height, showInteriorWalls, viewLevel, currentFloor]);
 
   return (
     <div className="relative">
-      <button 
-        onClick={() => setFpMode(!fpMode)}
-        className="absolute bottom-4 left-4 z-10 px-4 py-2 bg-gray-900/80 text-cyan-400 font-mono text-xs rounded-full border border-cyan-800 hover:bg-cyan-900/50 hover:text-cyan-100 transition-colors shadow-lg backdrop-blur-md"
-      >
-        {fpMode ? "⏏ Exit FP Mode" : "👁 Enter First-Person (WASD)"}
-      </button>
-      <div ref={mountRef} className="canvas-container rounded-lg overflow-hidden shadow-[0_0_15px_rgba(0,0,0,0.5)] border border-cyan-900/30" />
+      {/* Control Panel */}
+      <div className="absolute top-4 right-4 z-10 bg-white rounded-xl shadow-lg p-4 border border-gray-200 space-y-4 min-w-[200px]">
+        {/* Level Selector */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Floor Level</label>
+          <div className="flex rounded-lg overflow-hidden border border-gray-200">
+            {(['level0', 'level1', 'all'] as ViewLevel[]).map((level) => (
+              <button
+                key={level}
+                onClick={() => setViewLevel(level)}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewLevel === level 
+                    ? 'bg-cyan-500 text-white' 
+                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {level === 'level0' ? 'L0' : level === 'level1' ? 'L1' : 'All'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Interior Walls Toggle */}
+        <label className="flex items-center space-x-2 text-sm text-gray-700 cursor-pointer">
+          <input 
+            type="checkbox" 
+            checked={showInteriorWalls}
+            onChange={(e) => setShowInteriorWalls(e.target.checked)}
+            className="w-4 h-4 text-cyan-600 rounded"
+          />
+          <span className="font-mono text-xs">Interior Walls</span>
+        </label>
+
+        {/* Voyager Mode Button */}
+        <button
+          onClick={voyagerMode ? handleExitVoyager : handleEnterVoyager}
+          className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            voyagerMode 
+              ? 'bg-red-500 text-white hover:bg-red-600' 
+              : 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:from-cyan-600 hover:to-blue-600'
+          }`}
+        >
+          {voyagerMode ? '🚪 Exit Voyager' : '🚀 Enter Voyager'}
+        </button>
+
+        {voyagerMode && (
+          <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-2">
+            <div className="font-semibold mb-1">Controls:</div>
+            <div>WASD - Move</div>
+            <div>Mouse - Look</div>
+            <div>ESC - Exit</div>
+          </div>
+        )}
+      </div>
+
+      {/* Stats Panel */}
+      <div className="absolute bottom-4 left-4 z-10 bg-white/95 text-gray-700 font-mono text-xs px-4 py-3 rounded-lg shadow border border-gray-200">
+        <div className="flex items-center gap-4">
+          <div>
+            <span className="font-bold text-cyan-600">{graph.edges.length}</span>
+            <span className="text-gray-500 ml-1">walls</span>
+          </div>
+          <div className="w-px h-4 bg-gray-300" />
+          <div>
+            <span className="font-bold text-cyan-600">{graph.nodes.length}</span>
+            <span className="text-gray-500 ml-1">vertices</span>
+          </div>
+          {graph.has_second_floor && (
+            <>
+              <div className="w-px h-4 bg-gray-300" />
+              <div className="text-green-600 font-semibold">2 Floors</div>
+            </>
+          )}
+        </div>
+        
+        {/* Cost Wallet */}
+        {totalCost > 0 && (
+          <div className="mt-2 pt-2 border-t border-gray-200">
+            <div className="text-gray-500">Est. Cost</div>
+            <div className="text-lg font-bold text-emerald-600">
+              ₹{totalCost.toLocaleString('en-IN')}
+            </div>
+          </div>
+        )}
+
+        {voyagerMode && (
+          <div className="mt-2 pt-2 border-t border-gray-200">
+            <span className="text-orange-500 font-semibold">Floor {currentFloor}</span>
+          </div>
+        )}
+      </div>
+
+      <div 
+        ref={mountRef} 
+        className="rounded-xl overflow-hidden shadow-sm border border-gray-200" 
+        style={{ cursor: voyagerMode ? 'none' : 'move' }} 
+      />
     </div>
   );
 };
 
 function calculateBounds(nodes: Point2D[]) {
   if (nodes.length === 0) {
-    return { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+    return { minX: 0, maxX: 2000, minY: 0, maxY: 2000 };
   }
   
   const xs = nodes.map(n => n.x);
@@ -230,57 +544,150 @@ function calculateBounds(nodes: Point2D[]) {
   };
 }
 
-function createFloorGeometry(polygon: Point2D[]): THREE.BufferGeometry | null {
-  if (polygon.length < 3) return null;
+// Create AEC-style wall with solid mesh + wireframe edges
+function createAECWall(
+  x1: number, 
+  y1: number, 
+  x2: number, 
+  y2: number, 
+  material: THREE.MeshStandardMaterial,
+  kind: 'exterior' | 'interior',
+  level: number
+): THREE.Group {
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  const group = new THREE.Group();
   
-  const shape = new THREE.Shape();
-  shape.moveTo(polygon[0].x, polygon[0].y);
-  
-  for (let i = 1; i < polygon.length; i++) {
-    shape.lineTo(polygon[i].x, polygon[i].y);
-  }
-  
-  const geometry = new THREE.ShapeGeometry(shape);
-  return geometry;
-}
-
-function createWallMesh(start: Point2D, end: Point2D, kind: 'exterior' | 'interior', isUpperFloor: boolean = false): THREE.Mesh {
-  const length = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
-  const wallHeight = 100;
-  const wallThickness = kind === 'exterior' ? 8 : 4;
-  
-  const geometry = new THREE.BoxGeometry(length, wallThickness, wallHeight);
-  
-  let color = kind === 'exterior' ? 0x8b4513 : 0xd3d3d3; // Brown for exterior, gray for interior
-  if (isUpperFloor) color = 0x64748b; // Slate shell color
-  
-  const material = new THREE.MeshLambertMaterial({ 
-    color, 
-    transparent: isUpperFloor, 
-    opacity: isUpperFloor ? 0.5 : 1.0 
-  });
+  // Solid wall geometry
+  const geometry = new THREE.BoxGeometry(length, WALL_HEIGHT, WALL_THICKNESS);
+  geometry.computeVertexNormals();
   
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  group.add(mesh);
   
-  // Aesthetic: Add clear solid black edges over walls
-  const edges = new THREE.EdgesGeometry(geometry);
-  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ 
-    color: isUpperFloor ? 0x334155 : 0x000000, 
-    linewidth: 2,
-    transparent: isUpperFloor,
-    opacity: isUpperFloor ? 0.3 : 1.0
-  }));
-  mesh.add(line);
+  // AEC-style wireframe edges (dashed line look)
+  const edgesGeometry = new THREE.EdgesGeometry(geometry);
+  const edgeColor = kind === 'exterior' ? 0x0284c7 : 0x64748b;
+  const edgeMaterial = new THREE.LineBasicMaterial({ 
+    color: edgeColor,
+    linewidth: 1
+  });
+  const wireframe = new THREE.LineSegments(edgesGeometry, edgeMaterial);
+  group.add(wireframe);
   
-  // Position and rotate wall
-  const centerX = (start.x + end.x) / 2;
-  const centerY = (start.y + end.y) / 2;
-  const angle = Math.atan2(end.y - start.y, end.x - start.x);
+  // Position at midpoint, elevated for level
+  const yOffset = level * WALL_HEIGHT;
+  group.position.set(
+    (x1 + x2) / 2,
+    WALL_HEIGHT / 2 + yOffset,
+    (y1 + y2) / 2
+  );
   
-  mesh.position.set(centerX, centerY, wallHeight / 2);
-  mesh.rotation.z = angle;
+  // Rotate to align with wall direction
+  group.rotation.y = -Math.atan2(y2 - y1, x2 - x1);
   
-  return mesh;
+  return group;
+}
+
+// Create default staircase data when not detected but second floor exists
+function createDefaultStaircase(graph: GraphPayload, bounds: ReturnType<typeof calculateBounds>): StaircaseData {
+  // If void_coordinates exist, use them as staircase center
+  const center = graph.void_coordinates 
+    ? { x: graph.void_coordinates[0], y: graph.void_coordinates[1] }
+    : { x: (bounds.minX + bounds.maxX) / 2, y: bounds.maxY - 200 }; // Default to center-back
+  
+  return {
+    detected: true,
+    type: 'straight',
+    bounding_box: {
+      x: center.x - 100,
+      y: center.y - 150,
+      width: 200,
+      height: 300
+    },
+    center,
+    direction: 'up',
+    num_steps: Math.ceil(WALL_HEIGHT / STAIR_STEP_HEIGHT)
+  };
+}
+
+// Generate 3D staircase geometry
+function createStaircase(data: StaircaseData, scaleFactor: number): THREE.Group {
+  const group = new THREE.Group();
+  group.userData = { isStaircase: true, level: 'both' };
+  
+  const stepWidth = (data.bounding_box.width * scaleFactor);
+  const stepDepth = (data.bounding_box.height * scaleFactor) / data.num_steps;
+  const stepHeight = WALL_HEIGHT / data.num_steps;
+  
+  const stepMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe0ddd9,
+    roughness: 0.7,
+    metalness: 0.1
+  });
+
+  // Create steps
+  for (let i = 0; i < data.num_steps; i++) {
+    const stepGeometry = new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth);
+    stepGeometry.computeVertexNormals();
+    
+    const step = new THREE.Mesh(stepGeometry, stepMaterial);
+    step.position.set(
+      0,
+      stepHeight / 2 + (i * stepHeight),
+      stepDepth / 2 + (i * stepDepth)
+    );
+    step.castShadow = true;
+    step.receiveShadow = true;
+    group.add(step);
+    
+    // Add edge wireframe
+    const edgesGeo = new THREE.EdgesGeometry(stepGeometry);
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0x888888 });
+    const edges = new THREE.LineSegments(edgesGeo, edgeMat);
+    edges.position.copy(step.position);
+    group.add(edges);
+  }
+
+  // Side rails
+  const railMaterial = new THREE.MeshStandardMaterial({
+    color: 0x8b7355,
+    roughness: 0.6,
+    metalness: 0.2
+  });
+  
+  const railHeight = 0.9;
+  const railWidth = 0.05;
+  const totalLength = Math.sqrt(
+    Math.pow(data.bounding_box.height * scaleFactor, 2) + 
+    Math.pow(WALL_HEIGHT, 2)
+  );
+  
+  const railGeometry = new THREE.BoxGeometry(railWidth, railHeight, totalLength);
+  
+  // Left rail
+  const leftRail = new THREE.Mesh(railGeometry, railMaterial);
+  leftRail.position.set(-stepWidth / 2, WALL_HEIGHT / 2 + railHeight / 2, (data.bounding_box.height * scaleFactor) / 2);
+  leftRail.rotation.x = Math.atan2(WALL_HEIGHT, data.bounding_box.height * scaleFactor);
+  leftRail.castShadow = true;
+  group.add(leftRail);
+  
+  // Right rail
+  const rightRail = new THREE.Mesh(railGeometry, railMaterial);
+  rightRail.position.set(stepWidth / 2, WALL_HEIGHT / 2 + railHeight / 2, (data.bounding_box.height * scaleFactor) / 2);
+  rightRail.rotation.x = Math.atan2(WALL_HEIGHT, data.bounding_box.height * scaleFactor);
+  rightRail.castShadow = true;
+  group.add(rightRail);
+
+  // Position the entire staircase
+  group.position.set(
+    data.center.x * scaleFactor,
+    0,
+    data.center.y * scaleFactor
+  );
+
+  return group;
 }
 
 export default ThreeViewer;

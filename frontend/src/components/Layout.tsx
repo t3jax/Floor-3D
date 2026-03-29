@@ -7,6 +7,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const { result } = useUpload();
   const [downloading, setDownloading] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const navigation = [
     { name: 'Home', href: '/', icon: '🏠' },
@@ -21,108 +22,134 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     let imageBase64 = "";
 
     try {
-      // 1. Grab canvas if available (from the 3D viewer)
       const canvas = document.querySelector('canvas');
       if (canvas) {
         imageBase64 = canvas.toDataURL('image/png');
       }
 
-      // 2. Fetch the PDF blob from the backend
       const response = await axios.post(
         `http://localhost:8000/api/export-report/${result.project_id}`,
         { image_base64: imageBase64 },
         { responseType: 'blob' }
       );
 
-      // 3. Trigger download sequence
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Structural_Report_${result.project_id.split('-')[0]}.pdf`);
+      link.setAttribute('download', `Floor3D_Report_${result.project_id.split('-')[0]}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
     } catch (err) {
       console.error("Failed to download report", err);
-      alert("Uh oh! Failed to extract structural report.");
+      alert("Failed to generate report. Please try again.");
     } finally {
       setDownloading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-[#111827] to-[#0f172a] text-gray-100 font-sans">
-      {/* Header (Glassmorphism Futuristic) */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-gray-900/60 border-b border-cyan-800/50 shadow-[0_0_20px_rgba(0,188,212,0.15)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            
-            <div className="flex items-center space-x-4">
-              {/* Load SVG component natively using an img tag for simplicity, or just build a box here... Actually, React `img src` works perfectly! */}
-              <img src="/logo.svg" alt="Floor3D Logo" className="w-12 h-12 hover:scale-110 transition-transform duration-300" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar Navigation */}
+      <aside className={`${sidebarCollapsed ? 'w-20' : 'w-64'} min-h-screen bg-white border-r border-gray-200 transition-all duration-300 flex flex-col fixed left-0 top-0 z-50`}>
+        {/* Logo Section */}
+        <div className="p-5 border-b border-gray-100">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-sm">
+              <span className="text-white text-lg font-bold">F</span>
+            </div>
+            {!sidebarCollapsed && (
               <div>
-                <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500 tracking-wider">
-                  Floor<span className="font-light text-gray-200">3D</span>
-                </h1>
-                <p className="text-xs text-cyan-200/70 font-mono tracking-widest uppercase">
-                  Autonomous Structural Intelligence
-                </p>
+                <h1 className="text-lg font-bold text-gray-900">Floor3D</h1>
+                <p className="text-[10px] text-gray-400 font-medium">Structural Analysis</p>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
 
-            {/* Top Right Actions */}
-            <div className="flex items-center space-x-6">
-              {result?.project_id && (
-                <button 
-                  onClick={handleDownloadReport}
-                  disabled={downloading}
-                  className="relative group overflow-hidden px-6 py-2 rounded-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-semibold text-sm shadow-[0_0_15px_rgba(0,188,212,0.4)] hover:shadow-[0_0_25px_rgba(0,188,212,0.8)] transition-all duration-300 active:scale-95 disabled:opacity-50"
-                >
-                  <span className="relative z-10 flex items-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    <span>{downloading ? 'Compiling...' : 'Export Report'}</span>
+        {/* Collapse Toggle */}
+        <button 
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          className="absolute -right-3 top-16 w-6 h-6 bg-white border border-gray-200 rounded-full shadow-sm flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all z-10"
+        >
+          <svg className={`w-3 h-3 transition-transform ${sidebarCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        {/* Navigation Items */}
+        <nav className="flex-1 py-6 px-3 space-y-1">
+          {navigation.map((item) => {
+            const isActive = location.pathname === item.href;
+            return (
+              <Link
+                key={item.name}
+                to={item.href}
+                className={`group flex items-center ${sidebarCollapsed ? 'justify-center' : ''} px-4 py-3 rounded-lg transition-all duration-200 ${
+                  isActive
+                    ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <span className="text-lg">{item.icon}</span>
+                {!sidebarCollapsed && (
+                  <span className={`ml-3 font-medium text-sm ${isActive ? 'text-blue-700' : ''}`}>
+                    {item.name}
                   </span>
-                  <div className="absolute inset-0 bg-white/20 transform -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
-                </button>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Export Report Button */}
+        {result?.project_id && (
+          <div className="p-4 border-t border-gray-100">
+            <button 
+              onClick={handleDownloadReport}
+              disabled={downloading}
+              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : ''} px-4 py-3 rounded-lg bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {!sidebarCollapsed && (
+                <span className="ml-2">{downloading ? 'Generating...' : 'Export Report'}</span>
               )}
-            </div>
-
+            </button>
           </div>
-        </div>
-      </header>
+        )}
 
-      {/* Navigation Tabs */}
-      <nav className="bg-gray-800/40 border-b border-gray-700/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-2 py-2">
-            {navigation.map((item) => {
-              const isActive = location.pathname === item.href;
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`flex items-center px-4 py-3 rounded-t-lg transition-all duration-300 font-mono text-sm uppercase tracking-wider ${
-                    isActive
-                      ? 'bg-gray-900/80 text-cyan-400 border-b-2 border-cyan-400 shadow-[inset_0_-2px_8px_rgba(0,188,212,0.15)]'
-                      : 'text-gray-400 hover:text-cyan-200 hover:bg-gray-800/50'
-                  }`}
-                >
-                  <span className={`mr-2 ${isActive ? 'scale-110 drop-shadow-[0_0_5px_rgba(0,188,212,0.8)]' : ''} transition-transform`}>{item.icon}</span>
-                  {item.name}
-                </Link>
-              );
-            })}
-          </div>
+        {/* Version Info */}
+        <div className="p-4 border-t border-gray-100">
+          {!sidebarCollapsed && (
+            <p className="text-xs text-gray-400 text-center">v1.0.0</p>
+          )}
         </div>
-      </nav>
+      </aside>
 
       {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.03] pointer-events-none"></div>
-        <div className="relative z-10">
+      <div className={`flex-1 ${sidebarCollapsed ? 'ml-20' : 'ml-64'} transition-all duration-300`}>
+        {/* Top Header Bar */}
+        <header className="sticky top-0 z-40 bg-white border-b border-gray-100">
+          <div className="px-8 py-5">
+            <h2 className="text-xl font-semibold text-gray-900">
+              {navigation.find(n => n.href === location.pathname)?.name || 'Dashboard'}
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {location.pathname === '/' && 'Upload and analyze floor plans'}
+              {location.pathname === '/detection' && 'View 2D detection results'}
+              {location.pathname === '/3d-model' && 'Explore 3D visualization'}
+              {location.pathname === '/materials' && 'Material recommendations & cost analysis'}
+            </p>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="p-8">
           {children}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 };
