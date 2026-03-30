@@ -1,58 +1,95 @@
 {
   "materials": [
     {
-      "id": "aac",
-      "name": "Autoclaved Aerated Concrete (AAC)",
-      "strength": 72,
+      "id": "aac_blocks",
+      "name": "AAC Blocks",
+      "cost_level": "Low",
+      "strength": 55,
+      "strength_level": "Medium",
       "durability": 85,
-      "cost_per_unit": 45,
+      "durability_level": "High",
+      "cost_per_unit": 35,
       "unit": "sqft equivalent",
-      "notes": "Lightweight, good thermal insulation; moderate load-bearing."
+      "best_use": "Partition walls",
+      "notes": "Lightweight, excellent thermal insulation, easy to cut and shape. Ideal for non-load-bearing partition walls."
     },
     {
       "id": "red_brick",
-      "name": "Red Clay Brick",
-      "strength": 68,
-      "durability": 78,
-      "cost_per_unit": 38,
+      "name": "Red Brick",
+      "cost_level": "Medium",
+      "strength": 75,
+      "strength_level": "High",
+      "durability": 70,
+      "durability_level": "Medium",
+      "cost_per_unit": 42,
       "unit": "sqft equivalent",
-      "notes": "Traditional masonry; widely available."
+      "best_use": "Load-bearing walls",
+      "notes": "Traditional masonry material with excellent compressive strength. Best for load-bearing walls and structural applications."
     },
     {
       "id": "rcc",
-      "name": "Reinforced Cement Concrete (RCC)",
+      "name": "RCC (Reinforced Cement Concrete)",
+      "cost_level": "High",
       "strength": 95,
-      "durability": 92,
-      "cost_per_unit": 120,
+      "strength_level": "Very High",
+      "durability": 95,
+      "durability_level": "Very High",
+      "cost_per_unit": 150,
       "unit": "cum equivalent",
-      "notes": "High strength for frames and shear walls."
+      "best_use": "Columns, slabs",
+      "notes": "Maximum structural strength for columns, beams, and slabs. Essential for multi-storey buildings and load-bearing structures."
     },
     {
-      "id": "steel",
-      "name": "Structural Steel",
+      "id": "steel_frame",
+      "name": "Steel Frame",
+      "cost_level": "High",
       "strength": 98,
-      "durability": 88,
-      "cost_per_unit": 200,
+      "strength_level": "Very High",
+      "durability": 92,
+      "durability_level": "Very High",
+      "cost_per_unit": 220,
       "unit": "ton equivalent",
-      "notes": "Best strength-to-weight; corrosion protection required."
+      "best_use": "Long spans (>5m)",
+      "notes": "Best strength-to-weight ratio. Ideal for large span structures, industrial buildings, and high-rise construction. Requires corrosion protection."
     },
     {
-      "id": "fly_ash",
-      "name": "Fly Ash Brick / Block",
-      "strength": 62,
-      "durability": 80,
-      "cost_per_unit": 32,
+      "id": "hollow_concrete_block",
+      "name": "Hollow Concrete Block",
+      "cost_level": "Low-Medium",
+      "strength": 60,
+      "strength_level": "Medium",
+      "durability": 65,
+      "durability_level": "Medium",
+      "cost_per_unit": 38,
       "unit": "sqft equivalent",
-      "notes": "Eco-friendly; suitable for non-load partitions."
+      "best_use": "Non-structural walls",
+      "notes": "Cost-effective for non-structural and partition walls. Good sound insulation and faster construction."
     },
     {
-      "id": "precast",
-      "name": "Precast Concrete",
-      "strength": 88,
-      "durability": 90,
+      "id": "fly_ash_brick",
+      "name": "Fly Ash Brick",
+      "cost_level": "Low",
+      "strength": 68,
+      "strength_level": "Medium-High",
+      "durability": 82,
+      "durability_level": "High",
+      "cost_per_unit": 28,
+      "unit": "sqft equivalent",
+      "best_use": "General walling",
+      "notes": "Eco-friendly, uniform shape, low water absorption. Excellent for general walling applications with good thermal properties."
+    },
+    {
+      "id": "precast_concrete_panel",
+      "name": "Precast Concrete Panel",
+      "cost_level": "Medium-High",
+      "strength": 85,
+      "strength_level": "High",
+      "durability": 92,
+      "durability_level": "Very High",
       "cost_per_unit": 95,
       "unit": "panel equivalent",
-      "notes": "Factory quality; fast erection for repetitive bays."
+      "best_use": "Structural walls, slabs",
+      "notes": "Factory-manufactured quality control. Fast installation for large projects. Ideal for structural walls and floor slabs."
     }
   ]
 }

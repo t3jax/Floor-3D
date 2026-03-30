@@ -47,6 +47,8 @@ def _polygon_from_contours(
     contours: list,
     image_shape: tuple[int, int],
 ) -> list[RoomRegion]:
+    from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
+    
     h, w = image_shape
     img_area = float(h * w)
     rooms: list[RoomRegion] = []
@@ -56,25 +58,43 @@ def _polygon_from_contours(
     for i, c in enumerate(contours):
         if len(c) < 3:
             continue
-        poly = Polygon([(p[0][0], p[0][1]) for p in c])
-        if not poly.is_valid:
-            poly = poly.buffer(0)
-        a = poly.area
-        if a < min_a or a > max_a:
-            continue
         try:
+            poly = Polygon([(p[0][0], p[0][1]) for p in c])
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            
+            # Handle MultiPolygon case - take the largest polygon
+            if isinstance(poly, ShapelyMultiPolygon):
+                if len(poly.geoms) == 0:
+                    continue
+                poly = max(poly.geoms, key=lambda p: p.area)
+            
+            # Skip if not a valid polygon after processing
+            if not hasattr(poly, 'exterior') or poly.exterior is None:
+                continue
+                
+            a = poly.area
+            if a < min_a or a > max_a:
+                continue
+            
             c_pt = poly.centroid
-        except Exception:
-            continue
-        coords = list(poly.exterior.coords)[:-1]
-        rooms.append(
-            RoomRegion(
-                id=f"room_{i}",
-                polygon=[Point2D(x=float(px), y=float(py)) for px, py in coords],
-                area_px=float(a),
-                centroid=Point2D(x=float(c_pt.x), y=float(c_pt.y)),
+            coords = list(poly.exterior.coords)[:-1]
+            
+            if len(coords) < 3:
+                continue
+                
+            rooms.append(
+                RoomRegion(
+                    id=f"room_{i}",
+                    polygon=[Point2D(x=float(px), y=float(py)) for px, py in coords],
+                    area_px=float(a),
+                    centroid=Point2D(x=float(c_pt.x), y=float(c_pt.y)),
+                )
             )
-        )
+        except Exception:
+            # Skip any problematic contours
+            continue
+            
     rooms.sort(key=lambda r: -r.area_px)
     return rooms[:10]  # Limit to 10 rooms max
 
@@ -143,6 +163,7 @@ def build_graph_payload(
     has_second_floor: bool = False,
     void_coordinates: tuple[float, float] | None = None,
     staircase_info: dict | None = None,
+    wall_thicknesses: list[dict] | None = None,
 ) -> GraphPayload:
     nodes_t, edges_t = segments_to_graph(segments, tolerance)
     nodes = [(float(x), float(y)) for x, y in nodes_t]
@@ -152,6 +173,15 @@ def build_graph_payload(
         rooms = rooms_from_binary_mask(binary_for_rooms)
 
     wall_edges = classify_wall_edges(nodes, edges_t, rooms, image_shape)
+    
+    # Apply wall thickness classification if provided
+    if wall_thicknesses:
+        thickness_map = {t['segment_idx']: t for t in wall_thicknesses}
+        for i, edge in enumerate(wall_edges):
+            if i in thickness_map:
+                thickness_info = thickness_map[i]
+                edge.thickness_category = thickness_info.get('category', 'minor')
+                edge.thickness_m = thickness_info.get('thickness_m', 0.115)
 
     # Calculate gaps (nodes with exactly 1 connection)
     degree_map = {i: 0 for i in range(len(nodes))}
@@ -164,24 +194,28 @@ def build_graph_payload(
     # Convert staircase info to StaircaseData
     staircase_data = None
     if staircase_info and staircase_info.get('detected'):
+        bbox = staircase_info.get('bounding_box', {"x": 0, "y": 0, "width": 0, "height": 0})
+        # Convert any numpy types to native Python
+        bbox_native = {k: int(v) if hasattr(v, 'item') else v for k, v in bbox.items()}
+        center = staircase_info.get('center', (0, 0))
         staircase_data = StaircaseData(
-            detected=staircase_info.get('detected', False),
-            type=staircase_info.get('staircase_type', 'unknown'),
-            bounding_box=staircase_info.get('bounding_box', {"x": 0, "y": 0, "width": 0, "height": 0}),
+            detected=bool(staircase_info.get('detected', False)),
+            type=str(staircase_info.get('staircase_type', 'unknown')),
+            bounding_box=bbox_native,
             center=Point2D(
-                x=staircase_info.get('center', (0, 0))[0],
-                y=staircase_info.get('center', (0, 0))[1]
+                x=float(center[0]),
+                y=float(center[1])
             ),
-            direction=staircase_info.get('direction', 'unknown'),
-            num_steps=staircase_info.get('num_steps', 17)
+            direction=str(staircase_info.get('direction', 'unknown')),
+            num_steps=int(staircase_info.get('num_steps', 17))
         )
 
     return GraphPayload(
-        nodes=[Point2D(x=x, y=y) for x, y in nodes],
+        nodes=[Point2D(x=float(x), y=float(y)) for x, y in nodes],
         edges=wall_edges,
         rooms=rooms,
         gaps=gaps,
-        has_second_floor=has_second_floor,
+        has_second_floor=bool(has_second_floor),
         void_coordinates=void_coordinates,
         staircase=staircase_data
     )

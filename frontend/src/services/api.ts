@@ -1,7 +1,9 @@
 import axios from 'axios';
 import { ProcessResult, Point2D } from '../types';
 
-const API_BASE = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000';
+// In development with proxy, use relative URLs
+// In production, adjust as needed
+const API_BASE = '';
 
 export const api = axios.create({
   baseURL: API_BASE,
@@ -14,11 +16,8 @@ export const uploadFloorPlan = async (file: File): Promise<ProcessResult> => {
   const formData = new FormData();
   formData.append('file', file);
   
-  const response = await api.post('/api/process-floorplan', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
+  // Use relative URL - proxy will forward to backend
+  const response = await axios.post('/api/process-floorplan', formData);
   
   return response.data;
 };

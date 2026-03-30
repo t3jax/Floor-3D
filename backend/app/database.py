@@ -1,85 +1,156 @@
-import sqlite3
-import json
-import uuid
-from pathlib import Path
-from app.config import settings
+"""
+Database module - PostgreSQL via Supabase using SQLAlchemy ORM.
+Provides both modern ORM interface and legacy SQL compatibility.
 
-DB_PATH = Path("structural_intelligence.db")
+Migration from SQLite to Supabase PostgreSQL:
+- Uses SQLAlchemy for ORM and schema management
+- Maintains backward compatibility with legacy code
+- Auto-creates tables in Supabase 'public' schema on startup
+"""
+
+import json
+from typing import Any, Generator
+from contextlib import contextmanager
+
+from app.database_sqlalchemy import (
+    SessionLocal,
+    Material,
+    StructuralElement,
+    Recommendation,
+    ScaleMetadata,
+    ProjectMetadata,
+    init_db as _init_db,
+    engine,
+    Base
+)
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+
+class LegacyDBWrapper:
+    """
+    Wrapper that provides SQLite-like cursor interface for legacy code.
+    Translates old sqlite3 calls to SQLAlchemy operations.
+    """
+    
+    def __init__(self, session: Session):
+        self.session = session
+        self._cursor = None
+        self.row_factory = None  # For SQLite compatibility
+    
+    def cursor(self):
+        """Returns a cursor-like object."""
+        if self._cursor is None:
+            self._cursor = LegacyCursor(self.session)
+        return self._cursor
+    
+    def commit(self):
+        """Commit the transaction."""
+        self.session.commit()
+    
+    def rollback(self):
+        """Rollback the transaction."""
+        self.session.rollback()
+    
+    def close(self):
+        """Close the session."""
+        self.session.close()
+
+
+class LegacyCursor:
+    """Cursor-like interface for executing raw SQL."""
+    
+    def __init__(self, session: Session):
+        self.session = session
+        self._last_result = None
+    
+    def execute(self, sql: str, params: tuple = ()):
+        """Execute raw SQL with parameters."""
+        # Convert ? placeholders to :param1, :param2, etc. for PostgreSQL
+        param_dict = {}
+        sql_pg = sql
+        for i, param in enumerate(params, 1):
+            sql_pg = sql_pg.replace('?', f':param{i}', 1)
+            param_dict[f'param{i}'] = param
+        
+        result = self.session.execute(text(sql_pg), param_dict)
+        self._last_result = result
+        self.session.commit()  # Auto-commit for legacy compatibility
+        return result
+    
+    def fetchone(self):
+        """Fetch one row from last query."""
+        if self._last_result:
+            row = self._last_result.fetchone()
+            return row if row else None
+        return None
+    
+    def fetchall(self):
+        """Fetch all rows from last query."""
+        if self._last_result:
+            return self._last_result.fetchall()
+        return []
+
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """
+    Get database session (legacy compatibility).
+    Returns a wrapper that provides SQLite-like interface.
+    
+    Usage (legacy code):
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO ...", (param1, param2))
+        conn.commit()
+        conn.close()
+    """
+    session = SessionLocal()
+    return LegacyDBWrapper(session)
+
+
+@contextmanager
+def get_db_session() -> Generator[Session, None, None]:
+    """
+    Context manager for database sessions.
+    Preferred way for new code - use this instead of get_db().
+    
+    Usage (modern code):
+        with get_db_session() as db:
+            material = db.query(Material).first()
+            # Auto-commits on success, auto-rollbacks on error
+    """
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
 
 def init_db():
-    conn = get_db()
-    c = conn.cursor()
-    
-    c.execute('DROP TABLE IF EXISTS Materials')
-    # 1. Materials Table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS Materials (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            strength REAL,
-            durability REAL,
-            cost_per_unit REAL,
-            unit TEXT,
-            notes TEXT
-        )
-    ''')
-    
-    # 2. Structural_Elements Table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS Structural_Elements (
-            id TEXT PRIMARY KEY,
-            project_id TEXT,
-            element_type TEXT,
-            length_px REAL,
-            has_second_floor BOOLEAN
-        )
-    ''')
-    
-    # 3. Recommendations Table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS Recommendations (
-            id TEXT PRIMARY KEY,
-            project_id TEXT,
-            element_id TEXT,
-            material_id TEXT,
-            score REAL,
-            llm_explanation TEXT,
-            total_cost REAL,
-            volume_m3 REAL
-        )
-    ''')
-    
-    conn.commit()
-    
-    # Seed initial materials from JSON if table is empty
-    c.execute('SELECT COUNT(*) FROM Materials')
-    if c.fetchone()[0] == 0:
-        json_path = settings.materials_path
-        if json_path.exists():
-            with open(json_path, encoding="utf-8") as f:
-                data = json.load(f)
-                for m in data.get("materials", []):
-                    c.execute('''
-                        INSERT INTO Materials (
-                            id, name, strength, durability, cost_per_unit, unit, notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        m.get("id", str(uuid.uuid4())), 
-                        m.get("name", "Unknown Material"), 
-                        m.get("strength", 0.0), 
-                        m.get("durability", 0.0), 
-                        m.get("cost_per_unit", 0.0),
-                        m.get("unit", ""),
-                        m.get("notes", "")
-                    ))
-        conn.commit()
+    """Initialize database schema and seed materials."""
+    _init_db()
 
-    conn.close()
 
-# Run initialization immediately when imported
+# Run initialization on import
 init_db()
+
+
+# Export all models and utilities
+__all__ = [
+    'get_db',
+    'get_db_session',
+    'init_db',
+    'Material',
+    'StructuralElement',
+    'Recommendation',
+    'ScaleMetadata',
+    'ProjectMetadata',
+    'SessionLocal',
+    'Base',
+    'engine'
+]
+

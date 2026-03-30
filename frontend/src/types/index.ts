@@ -8,6 +8,8 @@ export interface WallEdge {
   b: number;
   length_px: number;
   kind: 'exterior' | 'interior';
+  thickness_category?: 'major' | 'minor';
+  thickness_m?: number;
 }
 
 export interface RoomRegion {
@@ -31,6 +33,18 @@ export interface StaircaseData {
   num_steps: number;
 }
 
+export interface ScaleMetadata {
+  scale_factor: number;
+  scaling_method: 'ocr' | 'heuristic' | 'default';
+  is_heuristic_scale: boolean;
+  confidence: number;
+  aspect_ratio: number;
+  reference_length_px: number;
+  reference_length_m: number;
+  detected_dimensions?: any[];
+  room_labels?: any[];
+}
+
 export interface GraphPayload {
   nodes: Point2D[];
   edges: WallEdge[];
@@ -39,6 +53,7 @@ export interface GraphPayload {
   has_second_floor?: boolean;
   void_coordinates?: [number, number];
   staircase?: StaircaseData;
+  scale_metadata?: ScaleMetadata;
 }
 
 export interface MaterialRecommendation {
@@ -87,4 +102,5 @@ export interface ProcessResult {
   llm_prompt: string;
   meta: Record<string, any>;
   project_id?: string;
+  scale_metadata?: ScaleMetadata;
 }

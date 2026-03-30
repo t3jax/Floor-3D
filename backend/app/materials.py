@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from app.config import settings
 from app.schemas import MaterialEntry, MaterialRecommendation
-from app.database import get_db
+from app.database import get_db, get_db_session, Material
 
 
 @dataclass
@@ -26,22 +26,40 @@ class CostEstimate:
 
 
 def load_materials(path: Path | None = None) -> list[MaterialEntry]:
-    # We now fetch from our SQLite Database instead of the JSON
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM Materials")
-    rows = c.fetchall()
-    conn.close()
-    
-    return [MaterialEntry(
-        id=row['id'],
-        name=row['name'],
-        strength=row['strength'],
-        durability=row['durability'],
-        cost_per_unit=row['cost_per_unit'],
-        unit=row['unit'],
-        notes=row['notes']
-    ) for row in rows]
+    """
+    Load materials from Supabase database.
+    Falls back to legacy SQL interface for compatibility.
+    """
+    # Option 1: Using modern ORM (preferred for new code)
+    try:
+        with get_db_session() as db:
+            materials = db.query(Material).all()
+            return [MaterialEntry(
+                id=m.id,
+                name=m.name,
+                strength=m.strength,
+                durability=m.durability,
+                cost_per_unit=m.cost_per_unit,
+                unit=m.unit,
+                notes=m.notes
+            ) for m in materials]
+    except Exception:
+        # Option 2: Fallback to legacy SQL interface
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT * FROM materials")
+        rows = c.fetchall()
+        conn.close()
+        
+        return [MaterialEntry(
+            id=row[0] if isinstance(row, tuple) else row['id'],
+            name=row[1] if isinstance(row, tuple) else row['name'],
+            strength=row[2] if isinstance(row, tuple) else row['strength'],
+            durability=row[3] if isinstance(row, tuple) else row['durability'],
+            cost_per_unit=row[4] if isinstance(row, tuple) else row['cost_per_unit'],
+            unit=row[5] if isinstance(row, tuple) else row['unit'],
+            notes=row[6] if isinstance(row, tuple) else row['notes']
+        ) for row in rows]
 
 
 def score_material(strength: float, durability: float, cost: float) -> float:

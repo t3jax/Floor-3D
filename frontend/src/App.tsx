@@ -6,6 +6,7 @@ import HomePage from './pages/HomePage';
 import DetectionPage from './pages/DetectionPage';
 import Model3DPage from './pages/Model3DPage';
 import MaterialsPage from './pages/MaterialsPage';
+import DatabasePage from './pages/DatabasePage';
 
 const App: React.FC = () => {
   return (
@@ -17,6 +18,7 @@ const App: React.FC = () => {
             <Route path="/detection" element={<DetectionPage />} />
             <Route path="/3d-model" element={<Model3DPage />} />
             <Route path="/materials" element={<MaterialsPage />} />
+            <Route path="/database" element={<DatabasePage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>

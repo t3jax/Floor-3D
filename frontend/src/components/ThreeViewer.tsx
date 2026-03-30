@@ -1,8 +1,8 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls';
-import { GraphPayload, WallEdge, Point2D, StaircaseData } from '../types';
+import { GraphPayload, WallEdge, Point2D, StaircaseData, ScaleMetadata } from '../types';
 
 interface ThreeViewerProps {
   graph: GraphPayload;
@@ -11,13 +11,14 @@ interface ThreeViewerProps {
   totalCost?: number;
 }
 
-// Constants
-const WALL_HEIGHT = 3.0; // 3 meters per floor
-const WALL_THICKNESS = 0.2;
-const SCALE_FACTOR = 0.01; // Convert pixels to meters
+// Default constants (used as fallback)
+const DEFAULT_WALL_HEIGHT = 3.0; // 3 meters per floor
+const DEFAULT_WALL_THICKNESS_MAJOR = 0.23; // 9 inches for major walls
+const DEFAULT_WALL_THICKNESS_MINOR = 0.115; // 4.5 inches for minor walls
+const DEFAULT_SCALE_FACTOR = 0.01; // Convert pixels to meters (fallback)
 const EYE_LEVEL = 1.6; // Human eye level in meters
 const MOVE_SPEED = 5.0;
-const STAIR_STEP_HEIGHT = 0.18; // 18cm per step
+const DEFAULT_STAIR_STEP_HEIGHT = 0.15; // 15cm per step (as per spec)
 
 type ViewLevel = 'level0' | 'level1' | 'all';
 
@@ -28,6 +29,23 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
   totalCost = 0
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  
+  // Get scale factor from graph metadata or use default
+  const scaleFactor = useMemo(() => {
+    return graph.scale_metadata?.scale_factor || DEFAULT_SCALE_FACTOR;
+  }, [graph.scale_metadata]);
+  
+  // Get scaling method info for display
+  const scalingInfo = useMemo(() => {
+    const meta = graph.scale_metadata;
+    if (!meta) return { method: 'default', confidence: 0 };
+    return {
+      method: meta.scaling_method,
+      confidence: meta.confidence,
+      isHeuristic: meta.is_heuristic_scale,
+      aspectRatio: meta.aspect_ratio
+    };
+  }, [graph.scale_metadata]);
   const [showInteriorWalls, setShowInteriorWalls] = useState(true);
   const [viewLevel, setViewLevel] = useState<ViewLevel>('all');
   const [voyagerMode, setVoyagerMode] = useState(false);
@@ -51,10 +69,10 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
       return;
     }
     
-    // Position camera at center of floor plan
+    // Position camera at center of floor plan using dynamic scale
     const bounds = calculateBounds(graph.nodes);
-    const centerX = ((bounds.minX + bounds.maxX) / 2) * SCALE_FACTOR;
-    const centerZ = ((bounds.minY + bounds.maxY) / 2) * SCALE_FACTOR;
+    const centerX = ((bounds.minX + bounds.maxX) / 2) * scaleFactor;
+    const centerZ = ((bounds.minY + bounds.maxY) / 2) * scaleFactor;
     cameraRef.current.position.set(centerX, EYE_LEVEL, centerZ);
     
     // Disable orbit controls
@@ -65,7 +83,7 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
     // Lock pointer
     pointerControlsRef.current.lock();
     setVoyagerMode(true);
-  }, [graph.nodes]);
+  }, [graph.nodes, scaleFactor]);
 
   const handleExitVoyager = useCallback(() => {
     if (pointerControlsRef.current) {
@@ -78,6 +96,10 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
     if (!mountRef.current || !graph) return;
 
     const currentMount = mountRef.current;
+    
+    // Use dynamic scale factor from graph metadata
+    const scale = scaleFactor;
+    const wallHeight = DEFAULT_WALL_HEIGHT;
 
     // Scene setup
     const scene = new THREE.Scene();
@@ -86,10 +108,10 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
 
     // Calculate bounds
     const bounds = calculateBounds(graph.nodes);
-    const planeCenterX = ((bounds.minX + bounds.maxX) / 2) * SCALE_FACTOR;
-    const planeCenterZ = ((bounds.minY + bounds.maxY) / 2) * SCALE_FACTOR;
-    const planeSizeX = (bounds.maxX - bounds.minX) * SCALE_FACTOR;
-    const planeSizeZ = (bounds.maxY - bounds.minY) * SCALE_FACTOR;
+    const planeCenterX = ((bounds.minX + bounds.maxX) / 2) * scale;
+    const planeCenterZ = ((bounds.minY + bounds.maxY) / 2) * scale;
+    const planeSizeX = (bounds.maxX - bounds.minX) * scale;
+    const planeSizeZ = (bounds.maxY - bounds.minY) * scale;
     
     // Camera
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
@@ -130,7 +152,7 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
     const orbitControls = new OrbitControls(camera, renderer.domElement);
     orbitControls.enableDamping = true;
     orbitControls.dampingFactor = 0.05;
-    orbitControls.target.set(planeCenterX, WALL_HEIGHT / 2, planeCenterZ);
+    orbitControls.target.set(planeCenterX, wallHeight / 2, planeCenterZ);
     orbitControls.maxPolarAngle = Math.PI / 2;
     orbitControls.update();
     orbitControlsRef.current = orbitControls;
@@ -176,7 +198,7 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
       });
       const floor1 = new THREE.Mesh(floorGeometry.clone(), floor1Material);
       floor1.rotation.x = -Math.PI / 2;
-      floor1.position.set(planeCenterX, WALL_HEIGHT, planeCenterZ);
+      floor1.position.set(planeCenterX, wallHeight, planeCenterZ);
       floor1.receiveShadow = true;
       floor1.userData = { level: 1 };
       scene.add(floor1);
@@ -212,15 +234,21 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
       const startNode = graph.nodes[wall.a];
       const endNode = graph.nodes[wall.b];
       
+      // Get dynamic wall thickness from edge data
+      const wallThickness = wall.thickness_m || 
+        (wall.thickness_category === 'major' ? DEFAULT_WALL_THICKNESS_MAJOR : DEFAULT_WALL_THICKNESS_MINOR);
+      
       if (startNode && endNode) {
         const wallGroup = createAECWall(
-          startNode.x * SCALE_FACTOR, 
-          startNode.y * SCALE_FACTOR, 
-          endNode.x * SCALE_FACTOR, 
-          endNode.y * SCALE_FACTOR,
+          startNode.x * scale, 
+          startNode.y * scale, 
+          endNode.x * scale, 
+          endNode.y * scale,
           wallMaterial,
           wall.kind,
-          0 // Level 0
+          0, // Level 0
+          wallHeight,
+          wallThickness
         );
         wallGroup.userData = { level: 0, kind: wall.kind };
         scene.add(wallGroup);
@@ -243,15 +271,21 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
         const startNode = graph.nodes[wall.a];
         const endNode = graph.nodes[wall.b];
         
+        // Get dynamic wall thickness from edge data
+        const wallThickness = wall.thickness_m || 
+          (wall.thickness_category === 'major' ? DEFAULT_WALL_THICKNESS_MAJOR : DEFAULT_WALL_THICKNESS_MINOR);
+        
         if (startNode && endNode) {
           const wallGroup = createAECWall(
-            startNode.x * SCALE_FACTOR, 
-            startNode.y * SCALE_FACTOR, 
-            endNode.x * SCALE_FACTOR, 
-            endNode.y * SCALE_FACTOR,
+            startNode.x * scale, 
+            startNode.y * scale, 
+            endNode.x * scale, 
+            endNode.y * scale,
             transparentWallMaterial,
             wall.kind,
-            1 // Level 1
+            1, // Level 1
+            wallHeight,
+            wallThickness
           );
           wallGroup.userData = { level: 1, kind: wall.kind };
           scene.add(wallGroup);
@@ -265,7 +299,7 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
     let staircaseGroup: THREE.Group | null = null;
     if (graph.staircase?.detected || graph.has_second_floor) {
       const staircaseData = graph.staircase || createDefaultStaircase(graph, bounds);
-      staircaseGroup = createStaircase(staircaseData, SCALE_FACTOR);
+      staircaseGroup = createStaircase(staircaseData, scale);
       scene.add(staircaseGroup);
       
       // Store staircase bounds for collision/climbing
@@ -387,12 +421,12 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
             // Calculate height based on position in staircase
             const progress = (camera.position.z - staircaseBoundsRef.current.min.z) / 
                            (staircaseBoundsRef.current.max.z - staircaseBoundsRef.current.min.z);
-            const targetY = EYE_LEVEL + progress * WALL_HEIGHT;
+            const targetY = EYE_LEVEL + progress * DEFAULT_WALL_HEIGHT;
             camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetY, 0.1);
             setCurrentFloor(progress > 0.5 ? 1 : 0);
           } else {
             // Reset to current floor level
-            const targetY = EYE_LEVEL + currentFloor * WALL_HEIGHT;
+            const targetY = EYE_LEVEL + currentFloor * DEFAULT_WALL_HEIGHT;
             camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetY, 0.1);
           }
         }
@@ -436,12 +470,38 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
       }
       renderer.dispose();
     };
-  }, [graph, width, height, showInteriorWalls, viewLevel, currentFloor]);
+  }, [graph, width, height, showInteriorWalls, viewLevel, currentFloor, scaleFactor]);
 
   return (
     <div className="relative">
       {/* Control Panel */}
       <div className="absolute top-4 right-4 z-10 bg-white rounded-xl shadow-lg p-4 border border-gray-200 space-y-4 min-w-[200px]">
+        {/* Scale Info */}
+        <div className="border-b border-gray-100 pb-3">
+          <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Scale Info</label>
+          <div className="text-xs text-gray-600 space-y-1">
+            <div className="flex justify-between">
+              <span>Method:</span>
+              <span className={`font-medium ${
+                scalingInfo.method === 'ocr' ? 'text-green-600' : 
+                scalingInfo.method === 'heuristic' ? 'text-yellow-600' : 'text-gray-500'
+              }`}>
+                {scalingInfo.method.toUpperCase()}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Scale:</span>
+              <span className="font-mono">{(scaleFactor * 100).toFixed(2)} cm/px</span>
+            </div>
+            {scalingInfo.confidence > 0 && (
+              <div className="flex justify-between">
+                <span>Confidence:</span>
+                <span>{(scalingInfo.confidence * 100).toFixed(0)}%</span>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Level Selector */}
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Floor Level</label>
@@ -565,13 +625,15 @@ function createAECWall(
   y2: number, 
   material: THREE.MeshStandardMaterial,
   kind: 'exterior' | 'interior',
-  level: number
+  level: number,
+  wallHeight: number = DEFAULT_WALL_HEIGHT,
+  wallThickness: number = DEFAULT_WALL_THICKNESS_MINOR
 ): THREE.Group {
   const length = Math.hypot(x2 - x1, y2 - y1);
   const group = new THREE.Group();
   
-  // Solid wall geometry
-  const geometry = new THREE.BoxGeometry(length, WALL_HEIGHT, WALL_THICKNESS);
+  // Solid wall geometry - use dynamic thickness
+  const geometry = new THREE.BoxGeometry(length, wallHeight, wallThickness);
   geometry.computeVertexNormals();
   
   const mesh = new THREE.Mesh(geometry, material);
@@ -590,10 +652,10 @@ function createAECWall(
   group.add(wireframe);
   
   // Position at midpoint, elevated for level
-  const yOffset = level * WALL_HEIGHT;
+  const yOffset = level * wallHeight;
   group.position.set(
     (x1 + x2) / 2,
-    WALL_HEIGHT / 2 + yOffset,
+    wallHeight / 2 + yOffset,
     (y1 + y2) / 2
   );
   
@@ -621,18 +683,18 @@ function createDefaultStaircase(graph: GraphPayload, bounds: ReturnType<typeof c
     },
     center,
     direction: 'up',
-    num_steps: Math.ceil(WALL_HEIGHT / STAIR_STEP_HEIGHT)
+    num_steps: Math.ceil(DEFAULT_WALL_HEIGHT / DEFAULT_STAIR_STEP_HEIGHT)
   };
 }
 
 // Generate 3D staircase geometry
-function createStaircase(data: StaircaseData, scaleFactor: number): THREE.Group {
+function createStaircase(data: StaircaseData, scaleFactor: number, wallHeight: number = DEFAULT_WALL_HEIGHT): THREE.Group {
   const group = new THREE.Group();
   group.userData = { isStaircase: true, level: 'both' };
   
   const stepWidth = (data.bounding_box.width * scaleFactor);
   const stepDepth = (data.bounding_box.height * scaleFactor) / data.num_steps;
-  const stepHeight = WALL_HEIGHT / data.num_steps;
+  const stepHeight = wallHeight / data.num_steps;
   
   const stepMaterial = new THREE.MeshStandardMaterial({
     color: 0xe0ddd9,
@@ -674,22 +736,22 @@ function createStaircase(data: StaircaseData, scaleFactor: number): THREE.Group 
   const railWidth = 0.05;
   const totalLength = Math.sqrt(
     Math.pow(data.bounding_box.height * scaleFactor, 2) + 
-    Math.pow(WALL_HEIGHT, 2)
+    Math.pow(wallHeight, 2)
   );
   
   const railGeometry = new THREE.BoxGeometry(railWidth, railHeight, totalLength);
   
   // Left rail
   const leftRail = new THREE.Mesh(railGeometry, railMaterial);
-  leftRail.position.set(-stepWidth / 2, WALL_HEIGHT / 2 + railHeight / 2, (data.bounding_box.height * scaleFactor) / 2);
-  leftRail.rotation.x = Math.atan2(WALL_HEIGHT, data.bounding_box.height * scaleFactor);
+  leftRail.position.set(-stepWidth / 2, wallHeight / 2 + railHeight / 2, (data.bounding_box.height * scaleFactor) / 2);
+  leftRail.rotation.x = Math.atan2(wallHeight, data.bounding_box.height * scaleFactor);
   leftRail.castShadow = true;
   group.add(leftRail);
   
   // Right rail
   const rightRail = new THREE.Mesh(railGeometry, railMaterial);
-  rightRail.position.set(stepWidth / 2, WALL_HEIGHT / 2 + railHeight / 2, (data.bounding_box.height * scaleFactor) / 2);
-  rightRail.rotation.x = Math.atan2(WALL_HEIGHT, data.bounding_box.height * scaleFactor);
+  rightRail.position.set(stepWidth / 2, wallHeight / 2 + railHeight / 2, (data.bounding_box.height * scaleFactor) / 2);
+  rightRail.rotation.x = Math.atan2(wallHeight, data.bounding_box.height * scaleFactor);
   rightRail.castShadow = true;
   group.add(rightRail);
 

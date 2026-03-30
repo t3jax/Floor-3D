@@ -15,6 +15,21 @@ class WallEdge(BaseModel):
     b: int
     length_px: float
     kind: Literal["exterior", "interior"] = "interior"
+    thickness_category: Literal["major", "minor"] = "minor"
+    thickness_m: float = 0.115  # Default minor thickness
+
+
+class ScaleMetadata(BaseModel):
+    """Metadata about the scaling calibration."""
+    scale_factor: float = 0.01  # pixels to meters
+    scaling_method: Literal["ocr", "heuristic", "default"] = "default"
+    is_heuristic_scale: bool = True
+    confidence: float = 0.0
+    aspect_ratio: float = 1.0
+    reference_length_px: float = 0.0
+    reference_length_m: float = 0.0
+    detected_dimensions: list[dict] = Field(default_factory=list)
+    room_labels: list[dict] = Field(default_factory=list)
 
 
 class RoomRegion(BaseModel):
@@ -42,6 +57,7 @@ class GraphPayload(BaseModel):
     has_second_floor: bool = False
     void_coordinates: tuple[float, float] | None = None
     staircase: StaircaseData | None = None
+    scale_metadata: ScaleMetadata | None = None
 
 
 class MaterialEntry(BaseModel):
@@ -52,6 +68,10 @@ class MaterialEntry(BaseModel):
     cost_per_unit: float
     unit: str = ""
     notes: str = ""
+    cost_level: str = ""
+    strength_level: str = ""
+    durability_level: str = ""
+    best_use: str = ""
 
 
 class MaterialRecommendation(BaseModel):
@@ -102,6 +122,7 @@ class ProcessResult(BaseModel):
     llm_prompt: str = ""
     meta: dict[str, Any] = Field(default_factory=dict)
     project_id: str | None = None
+    scale_metadata: ScaleMetadata | None = None
 
 
 class FallbackGraphInput(BaseModel):

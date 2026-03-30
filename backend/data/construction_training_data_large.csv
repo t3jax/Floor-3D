@@ -1,0 +1,91 @@
+material_type,grade,volume_m3,transport_distance_km,labor_intensity_score,market_volatility,actual_total_cost_inr
+Fly Ash Brick,Standard,45.2,23,4,0.92,137248.32
+Fly Ash Brick,Premium,112.7,67,7,1.05,426768.45
+Fly Ash Brick,Industrial,18.9,12,9,1.18,78945.24
+Red Brick,Standard,156.3,45,3,0.87,612892.41
+Red Brick,Premium,73.4,89,6,1.12,342156.78
+Red Brick,Industrial,29.1,34,8,0.95,54321.90
+AAC Block,Standard,88.6,56,5,1.03,356892.34
+AAC Block,Premium,142.5,78,2,0.91,478901.25
+AAC Block,Industrial,61.2,19,10,1.09,234567.89
+RCC,Standard,195.8,92,7,0.88,2894567.23
+RCC,Premium,34.7,51,9,1.15,845678.90
+RCC,Industrial,107.3,28,4,0.94,1765432.10
+Steel Frame,Standard,15.6,63,6,1.07,367890.12
+Steel Frame,Premium,182.4,37,8,0.82,4234567.89
+Steel Frame,Industrial,76.8,81,3,1.20,2345678.90
+Hollow Concrete,Standard,123.9,14,5,0.96,1456789.34
+Hollow Concrete,Premium,50.3,95,7,1.04,678901.23
+Hollow Concrete,Industrial,167.2,42,2,0.89,2567890.12
+Fly Ash Brick,Standard,92.1,29,8,1.11,289012.45
+Fly Ash Brick,Premium,38.7,76,10,0.85,123456.78
+Fly Ash Brick,Industrial,145.6,58,1,0.93,456789.01
+Red Brick,Standard,67.4,83,6,1.08,345678.90
+Red Brick,Premium,189.2,21,4,0.97,789012.34
+Red Brick,Industrial,24.8,47,9,1.19,67890.12
+AAC Block,Standard,131.7,69,3,0.90,456789.67
+AAC Block,Premium,55.9,33,7,1.02,234567.89
+AAC Block,Industrial,178.3,91,5,0.86,3456789.01
+RCC,Standard,41.2,15,8,1.13,789012.34
+RCC,Premium,109.8,72,2,0.98,1789012.56
+RCC,Industrial,162.5,39,10,1.06,2894567.89
+Steel Frame,Standard,27.9,84,4,0.84,678901.23
+Steel Frame,Premium,154.3,26,6,1.10,4567890.12
+Steel Frame,Industrial,83.6,59,9,0.92,1789012.34
+Hollow Concrete,Standard,116.4,48,1,1.01,1234567.89
+Hollow Concrete,Premium,69.7,93,7,0.87,345678.90
+Hollow Concrete,Industrial,198.7,17,3,1.14,4567890.12
+Fly Ash Brick,Standard,32.5,61,5,0.95,109234.56
+Fly Ash Brick,Premium,175.9,35,8,1.07,678901.23
+Fly Ash Brick,Industrial,94.3,79,6,0.81,289456.78
+Red Brick,Standard,157.2,22,10,1.16,789012.34
+Red Brick,Premium,46.8,96,2,0.99,234567.89
+Red Brick,Industrial,128.9,44,4,1.03,567890.12
+AAC Block,Standard,71.4,67,9,0.88,345678.90
+AAC Block,Premium,183.6,31,7,1.12,901234.56
+AAC Block,Industrial,59.2,88,5,0.94,178901.23
+RCC,Standard,136.7,53,3,1.05,2345678.90
+RCC,Premium,28.1,75,8,0.89,678901.23
+RCC,Industrial,149.3,18,6,1.17,3456789.01
+Steel Frame,Standard,102.4,41,10,0.96,1234567.89
+Steel Frame,Premium,77.6,82,1,1.09,2894567.89
+Steel Frame,Industrial,191.8,24,4,0.83,4567890.12
+Hollow Concrete,Standard,43.9,57,7,1.00,90123.45
+Hollow Concrete,Premium,165.2,64,9,1.08,2789012.34
+Hollow Concrete,Industrial,87.6,38,2,0.93,1456789.01
+Fly Ash Brick,Standard,156.8,71,6,1.02,567890.12
+Fly Ash Brick,Premium,23.4,94,8,0.97,90123.45
+Fly Ash Brick,Industrial,178.9,16,3,1.11,789012.34
+Red Brick,Standard,64.7,82,5,0.86,345678.90
+Red Brick,Premium,132.5,29,10,1.04,1234567.89
+Red Brick,Industrial,95.3,55,1,0.91,456789.01
+AAC Block,Standard,47.2,73,7,1.15,234567.89
+AAC Block,Premium,169.8,41,4,0.88,3456789.01
+AAC Block,Industrial,82.1,67,9,1.03,678901.23
+RCC,Standard,154.3,25,2,0.94,1789012.34
+RCC,Premium,36.9,89,6,1.09,901234.56
+RCC,Industrial,127.6,52,8,0.85,2894567.89
+Steel Frame,Standard,98.7,34,3,1.12,4567890.12
+Steel Frame,Premium,61.4,76,5,0.99,1234567.89
+Steel Frame,Industrial,184.2,19,7,1.06,3456789.01
+Hollow Concrete,Standard,75.9,93,10,0.92,789012.34
+Hollow Concrete,Premium,142.7,47,1,1.01,2345678.90
+Hollow Concrete,Industrial,29.8,61,4,0.87,678901.23
+Fly Ash Brick,Standard,188.4,38,9,1.10,901234.56
+Fly Ash Brick,Premium,53.7,85,2,0.95,345678.90
+Fly Ash Brick,Industrial,167.2,22,6,1.03,567890.12
+Red Brick,Standard,91.6,69,8,0.89,1789012.34
+Red Brick,Premium,34.8,44,3,1.07,123456.78
+Red Brick,Industrial,176.5,77,5,0.98,4567890.12
+AAC Block,Standard,128.9,51,10,1.14,2894567.89
+AAC Block,Premium,67.3,28,7,0.90,90123.45
+AAC Block,Industrial,145.7,94,1,1.05,3456789.01
+RCC,Standard,72.4,36,4,0.93,789012.34
+RCC,Premium,189.1,62,9,1.08,2345678.90
+RCC,Industrial,48.2,81,2,0.86,1234567.89
+Steel Frame,Standard,135.8,17,6,1.11,678901.23
+Steel Frame,Premium,96.4,53,8,0.97,1789012.34
+Steel Frame,Industrial,163.7,79,3,1.02,4567890.12
+Hollow Concrete,Standard,58.9,25,5,0.88,345678.90
+Hollow Concrete,Premium,171.3,68,10,1.12,2894567.89
+Hollow Concrete,Industrial,84.6,42,7,0.94,901234.56
