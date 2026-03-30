@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { ProcessResult, Point2D } from '../types';
 
 // In development with proxy, use relative URLs
@@ -16,10 +16,43 @@ export const uploadFloorPlan = async (file: File): Promise<ProcessResult> => {
   const formData = new FormData();
   formData.append('file', file);
   
-  // Use relative URL - proxy will forward to backend
-  const response = await axios.post('/api/process-floorplan', formData);
-  
-  return response.data;
+  try {
+    // Use relative URL - proxy will forward to backend
+    const response = await axios.post('/api/process-floorplan', formData, {
+      timeout: 60000, // 60 second timeout for large images
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const axiosError = error as AxiosError;
+      
+      // Check if it's a network error
+      if (!axiosError.response) {
+        throw new Error('Network error: Cannot connect to server. Please ensure the backend is running.');
+      }
+      
+      // Check for specific error status codes
+      const status = axiosError.response.status;
+      const data = axiosError.response.data as any;
+      
+      if (status === 500) {
+        // Server error - try to extract detail
+        const detail = data?.detail || data?.message || 'Server processing error';
+        throw new Error(`Server error: ${detail}`);
+      } else if (status === 400) {
+        throw new Error(`Invalid request: ${data?.detail || 'Bad file format'}`);
+      } else if (status === 413) {
+        throw new Error('File too large. Please upload a smaller image.');
+      } else {
+        throw new Error(`Request failed with status code ${status}`);
+      }
+    }
+    throw error;
+  }
 };
 
 export const processFallback = async (

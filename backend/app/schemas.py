@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,8 +26,8 @@ class ScaleMetadata(BaseModel):
     is_heuristic_scale: bool = True
     confidence: float = 0.0
     aspect_ratio: float = 1.0
-    reference_length_px: float = 0.0
-    reference_length_m: float = 0.0
+    reference_length_px: Optional[float] = None
+    reference_length_m: Optional[float] = None
     detected_dimensions: list[dict] = Field(default_factory=list)
     room_labels: list[dict] = Field(default_factory=list)
 

@@ -4,27 +4,59 @@ Autonomous Structural Intelligence System — FastAPI entry.
 
 from __future__ import annotations
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi import FastAPI, File, HTTPException, UploadFile, Request
+from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import base64
 import os
+import traceback
 from fpdf import FPDF
 
 from app.pipeline import process_fallback, process_image_bytes
 from app.materials import load_materials, top_k_materials
 from app.schemas import FallbackGraphInput, ProcessResult
 from app.database import get_db
+from app.ml_cost_estimator import get_cost_estimator, estimate_cost
+
 
 class ExportReportRequest(BaseModel):
     image_base64: str = ""
 
+
+class AIEstimationRequest(BaseModel):
+    """Request body for AI cost estimation."""
+    project_id: Optional[str] = None
+    volume_m3: Optional[float] = 10.0
+    transport_distance_km: Optional[float] = 30.0
+    labor_intensity_score: Optional[float] = 5.0
+    market_volatility: Optional[float] = 1.0
+
+
 app = FastAPI(
     title="Autonomous Structural Intelligence System",
     version="0.1.0",
-    description="Floor plan → graph → materials + LLM prompt template.",
+    description="Floor plan to graph to materials + LLM prompt template with AI Cost Estimation.",
 )
+
+
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handle all unhandled exceptions gracefully."""
+    error_msg = str(exc)
+    print(f"UNHANDLED ERROR in {request.url.path}: {error_msg}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "message": f"Server error: {error_msg}",
+            "detail": error_msg
+        }
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,20 +66,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize ML Cost Estimator on startup
+@app.on_event("startup")
+async def startup_event():
+    """Load ML model on application startup."""
+    estimator = get_cost_estimator()
+    if estimator.is_loaded:
+        print("AI Cost Estimation Model: LOADED")
+    else:
+        print("AI Cost Estimation Model: FALLBACK MODE (model not found)")
+
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health():
+    """Health check endpoint."""
+    estimator = get_cost_estimator()
+    return {
+        "status": "ok",
+        "ai_model_loaded": estimator.is_loaded
+    }
 
 
 @app.post("/api/process-floorplan", response_model=ProcessResult)
 async def process_floorplan(file: UploadFile = File(...)) -> ProcessResult:
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Expected an image file.")
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty file.")
-    return process_image_bytes(data)
+    """Process uploaded floor plan image and return analysis result."""
+    try:
+        # Validate file type
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Expected an image file (PNG, JPG, etc).")
+        
+        # Read file data
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="Empty file received.")
+        
+        # Check file size (max 10MB)
+        if len(data) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+        
+        print(f"Processing image: {file.filename}, size: {len(data)} bytes, type: {file.content_type}")
+        
+        # Process the image
+        result = process_image_bytes(data)
+        
+        if not result.success:
+            print(f"Processing failed: {result.message}")
+        else:
+            print(f"Processing successful: {len(result.graph.edges) if result.graph else 0} edges detected")
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_msg = f"Unexpected error processing image: {str(e)}"
+        print(error_msg)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.post("/api/process-fallback", response_model=ProcessResult)
@@ -67,6 +143,173 @@ def list_materials() -> dict:
 def materials_top(k: int = 3) -> dict:
     materials = load_materials()
     return {"top": [r.model_dump() for r in top_k_materials(materials, k=k)[0]]}
+
+
+@app.get("/api/materials/ai-costs")
+def get_ai_material_costs(
+    project_id: Optional[str] = None,
+    volume_m3: float = 10.0,
+    transport_distance_km: float = 30.0,
+    labor_intensity_score: float = 5.0,
+    market_volatility: float = 1.0
+) -> dict:
+    """
+    Get AI-powered cost predictions for all materials.
+    
+    If project_id is provided, fetches volume from database.
+    Otherwise uses provided volume_m3 parameter.
+    """
+    from app.database_sqlalchemy import SessionLocal, StructuralElement, ScaleMetadata, ProjectMetadata
+    
+    actual_volume = volume_m3
+    project_data = None
+    
+    # Try to fetch data from database if project_id provided
+    if project_id:
+        db = SessionLocal()
+        try:
+            # Get structural elements for volume calculation
+            elements = db.query(StructuralElement).filter(
+                StructuralElement.project_id == project_id
+            ).all()
+            
+            if elements:
+                # Calculate total wall volume
+                wall_height = 3.0  # meters
+                total_volume = 0.0
+                for el in elements:
+                    length_m = el.real_world_length_m or 0
+                    thickness_m = el.thickness_m or 0.115
+                    total_volume += length_m * thickness_m * wall_height
+                actual_volume = total_volume if total_volume > 0 else volume_m3
+            
+            # Try to get project metadata for additional params
+            project_meta = db.query(ProjectMetadata).filter(
+                ProjectMetadata.id == project_id
+            ).first()
+            
+            if project_meta:
+                project_data = {
+                    'transport_distance_km': project_meta.transport_distance_km or transport_distance_km,
+                    'labor_intensity_score': project_meta.labor_intensity_score or labor_intensity_score,
+                    'market_volatility': project_meta.market_volatility or market_volatility
+                }
+                transport_distance_km = project_data['transport_distance_km']
+                labor_intensity_score = project_data['labor_intensity_score']
+                market_volatility = project_data['market_volatility']
+                
+        except Exception as e:
+            print(f"Error fetching project data: {e}")
+        finally:
+            db.close()
+    
+    # Get cost estimates for all materials
+    estimator = get_cost_estimator()
+    all_estimates = estimator.estimate_all_materials(
+        volume_m3=actual_volume,
+        transport_distance_km=transport_distance_km,
+        labor_intensity_score=labor_intensity_score,
+        market_volatility=market_volatility
+    )
+    
+    # Load base materials and enhance with AI predictions
+    materials = load_materials()
+    enhanced_materials = []
+    
+    for mat in materials:
+        mat_dict = mat.model_dump()
+        mat_name = mat.name
+        
+        # Find matching AI estimate
+        ai_estimate = None
+        for est_name, est_data in all_estimates.items():
+            if est_name.lower().replace(' ', '_') == mat.id or est_name.lower() == mat_name.lower():
+                ai_estimate = est_data
+                break
+        
+        if ai_estimate:
+            mat_dict['predicted_cost'] = ai_estimate.get('predicted_cost', 0)
+            mat_dict['is_ai_generated'] = ai_estimate.get('is_ai_generated', False)
+            mat_dict['ai_confidence'] = ai_estimate.get('confidence', 0)
+            mat_dict['all_grades'] = ai_estimate.get('all_grades', {})
+        else:
+            # Fallback estimation
+            fallback = estimator._fallback_estimate(mat_name, actual_volume)
+            mat_dict['predicted_cost'] = fallback['predicted_cost']
+            mat_dict['is_ai_generated'] = False
+            mat_dict['ai_confidence'] = 0.5
+        
+        enhanced_materials.append(mat_dict)
+    
+    # Sort by predicted cost
+    enhanced_materials.sort(key=lambda x: x.get('predicted_cost', 0))
+    
+    return {
+        "materials": enhanced_materials,
+        "estimation_params": {
+            "volume_m3": round(actual_volume, 2),
+            "transport_distance_km": transport_distance_km,
+            "labor_intensity_score": labor_intensity_score,
+            "market_volatility": market_volatility
+        },
+        "model_info": estimator.get_model_info(),
+        "project_id": project_id
+    }
+
+
+@app.post("/api/estimate-cost")
+def estimate_material_cost(request: AIEstimationRequest) -> dict:
+    """
+    Estimate cost for a specific configuration using AI model.
+    """
+    from app.database_sqlalchemy import SessionLocal, StructuralElement
+    
+    volume_m3 = request.volume_m3 or 10.0
+    
+    # Fetch volume from database if project_id provided
+    if request.project_id:
+        db = SessionLocal()
+        try:
+            elements = db.query(StructuralElement).filter(
+                StructuralElement.project_id == request.project_id
+            ).all()
+            
+            if elements:
+                wall_height = 3.0
+                total_volume = sum(
+                    (el.real_world_length_m or 0) * (el.thickness_m or 0.115) * wall_height
+                    for el in elements
+                )
+                volume_m3 = total_volume if total_volume > 0 else volume_m3
+        except Exception as e:
+            print(f"Error fetching project data: {e}")
+        finally:
+            db.close()
+    
+    estimator = get_cost_estimator()
+    all_estimates = estimator.estimate_all_materials(
+        volume_m3=volume_m3,
+        transport_distance_km=request.transport_distance_km or 30.0,
+        labor_intensity_score=request.labor_intensity_score or 5.0,
+        market_volatility=request.market_volatility or 1.0
+    )
+    
+    return {
+        "success": True,
+        "estimates": all_estimates,
+        "volume_m3": round(volume_m3, 2),
+        "is_ai_model_loaded": estimator.is_loaded
+    }
+
+
+@app.get("/api/ai-model/info")
+def get_ai_model_info() -> dict:
+    """Get information about the loaded AI model."""
+    estimator = get_cost_estimator()
+    return {
+        "model_info": estimator.get_model_info(),
+        "is_loaded": estimator.is_loaded
+    }
 
 
 @app.get("/api/database/stats")

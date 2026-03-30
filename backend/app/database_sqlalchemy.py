@@ -117,7 +117,7 @@ class ScaleMetadata(Base):
 
 
 class ProjectMetadata(Base):
-    """Project-level metadata for tracking uploads."""
+    """Project-level metadata for tracking uploads and AI cost estimation."""
     __tablename__ = "project_metadata"
     
     id = Column(String, primary_key=True)  # UUID
@@ -128,6 +128,14 @@ class ProjectMetadata(Base):
     total_walls = Column(Integer, default=0)
     has_second_floor = Column(Boolean, default=False)
     total_cost_estimate = Column(Float, default=0.0)
+    
+    # AI Cost Estimation Parameters
+    total_volume_m3 = Column(Float, default=0.0)
+    transport_distance_km = Column(Float, default=30.0)
+    labor_intensity_score = Column(Float, default=5.0)
+    market_volatility = Column(Float, default=1.0)
+    location = Column(String, default="")
+    is_ai_estimated = Column(Boolean, default=False)
 
 
 # ==================== Database Utilities ====================
