@@ -206,21 +206,40 @@ def get_material_comparison(
     materials: list[MaterialEntry],
 ) -> list[dict]:
     """
-    Generate a comparison of costs for different materials.
+    Generate a comparison of costs for different materials using AI predictions.
     
     Returns:
         List of comparisons showing "If you use X material, it will cost Y"
     """
+    from app.ml_cost_estimator import get_cost_estimator
+    
+    cost_estimator = get_cost_estimator()
     comparisons = []
     
     for material in materials:
-        cost = total_volume * material.cost_per_unit
+        # Get AI prediction for this material
+        ai_estimate = cost_estimator.estimate_cost(
+            material=material.name,
+            grade='Standard',
+            volume_m3=total_volume,
+            transport_distance_km=30.0,
+            labor_intensity_score=5.0,
+            market_volatility=1.0
+        )
+        
+        # Use AI cost if available, otherwise fallback to simple calculation
+        if ai_estimate.get('is_ai_generated', False):
+            cost = ai_estimate['predicted_cost']
+            unit_cost = cost / total_volume if total_volume > 0 else material.cost_per_unit
+        else:
+            cost = total_volume * material.cost_per_unit
+            unit_cost = material.cost_per_unit
         
         # Determine cost rating
-        if cost < 50000:
+        if cost < 500000:
             rating = "Budget-Friendly"
             color = "green"
-        elif cost < 150000:
+        elif cost < 1500000:
             rating = "Moderate"
             color = "orange"
         else:
@@ -231,12 +250,14 @@ def get_material_comparison(
             'material_id': material.id,
             'material_name': material.name,
             'estimated_cost': round(cost, 2),
-            'cost_per_unit': material.cost_per_unit,
+            'cost_per_unit': round(unit_cost, 2),
             'unit': material.unit,
             'rating': rating,
             'color': color,
             'pros': get_material_pros(material),
             'cons': get_material_cons(material),
+            'is_ai_generated': ai_estimate.get('is_ai_generated', False),
+            'ai_confidence': ai_estimate.get('confidence', 0.0),
         })
     
     return sorted(comparisons, key=lambda x: x['estimated_cost'])
