@@ -116,30 +116,6 @@ const Model3DPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Staircase Info */}
-      {hasSecondFloor && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg shadow-sm border border-amber-200 p-6">
-          <h3 className="text-lg font-medium text-amber-900 mb-4 flex items-center">
-            <span className="text-2xl mr-2">🪜</span>
-            Staircase Detected
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div>
-              <div className="text-amber-700 font-medium">Type</div>
-              <div className="text-amber-900">{result.graph.staircase?.type || 'Straight'}</div>
-            </div>
-            <div>
-              <div className="text-amber-700 font-medium">Connects</div>
-              <div className="text-amber-900">Level 0 ↔ Level 1</div>
-            </div>
-            <div>
-              <div className="text-amber-700 font-medium">Height</div>
-              <div className="text-amber-900">3.0 meters</div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Room Information */}
       {result.graph.rooms.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">

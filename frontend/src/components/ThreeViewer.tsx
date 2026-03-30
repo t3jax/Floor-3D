@@ -295,17 +295,18 @@ const ThreeViewer: React.FC<ThreeViewerProps> = ({
 
     wallMeshesRef.current = wallMeshes;
 
+    // Staircase feature removed per user request
     // Generate staircase if detected
-    let staircaseGroup: THREE.Group | null = null;
-    if (graph.staircase?.detected || graph.has_second_floor) {
-      const staircaseData = graph.staircase || createDefaultStaircase(graph, bounds);
-      staircaseGroup = createStaircase(staircaseData, scale);
-      scene.add(staircaseGroup);
-      
-      // Store staircase bounds for collision/climbing
-      const box = new THREE.Box3().setFromObject(staircaseGroup);
-      staircaseBoundsRef.current = box;
-    }
+    // let staircaseGroup: THREE.Group | null = null;
+    // if (graph.staircase?.detected || graph.has_second_floor) {
+    //   const staircaseData = graph.staircase || createDefaultStaircase(graph, bounds);
+    //   staircaseGroup = createStaircase(staircaseData, scale);
+    //   scene.add(staircaseGroup);
+    //   
+    //   // Store staircase bounds for collision/climbing
+    //   const box = new THREE.Box3().setFromObject(staircaseGroup);
+    //   staircaseBoundsRef.current = box;
+    // }
 
     // Keyboard event handlers for Voyager mode
     const onKeyDown = (event: KeyboardEvent) => {

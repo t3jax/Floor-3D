@@ -112,11 +112,14 @@ def estimate_construction_cost(
     has_second_floor: bool = False,
 ) -> tuple[list[dict], float]:
     """
-    Estimate construction costs for different material choices.
+    Estimate construction costs using AI model when available.
+    Falls back to simple calculation if ML model is not loaded.
     
     Returns:
         Tuple of (list of cost estimates per material, recommended total cost)
     """
+    from app.ml_cost_estimator import get_cost_estimator
+    
     # Calculate volumes
     exterior_volume = calculate_wall_volume(edges, nodes, wall_kind='exterior')
     interior_volume = calculate_wall_volume(edges, nodes, wall_kind='interior')
@@ -128,21 +131,42 @@ def estimate_construction_cost(
         interior_volume *= 2
         total_volume *= 2
     
+    # Get AI cost estimator
+    cost_estimator = get_cost_estimator()
+    
     cost_estimates = []
     
     for material in materials:
-        # Calculate cost for this material
-        material_cost = total_volume * material.cost_per_unit
+        # Try to get AI prediction
+        ai_estimate = cost_estimator.estimate_cost(
+            material=material.name,
+            grade='Standard',
+            volume_m3=total_volume,
+            transport_distance_km=30.0,
+            labor_intensity_score=5.0,
+            market_volatility=1.0
+        )
+        
+        # Use AI prediction if available, otherwise fallback
+        if ai_estimate.get('is_ai_generated', False):
+            material_cost = ai_estimate['predicted_cost']
+            unit_cost = material_cost / total_volume if total_volume > 0 else material.cost_per_unit
+        else:
+            # Fallback to simple calculation
+            unit_cost = material.cost_per_unit
+            material_cost = total_volume * unit_cost
         
         cost_estimates.append({
             'material_id': material.id,
             'material_name': material.name,
-            'total_volume_m3': total_volume,
-            'unit_cost': material.cost_per_unit,
+            'total_volume_m3': round(total_volume, 2),
+            'unit_cost': round(unit_cost, 2),
             'total_cost': round(material_cost, 2),
             'wall_type': 'all',
             'strength': material.strength,
             'durability': material.durability,
+            'is_ai_generated': ai_estimate.get('is_ai_generated', False),
+            'ai_confidence': ai_estimate.get('confidence', 0.0),
         })
     
     # Sort by cost
@@ -157,7 +181,22 @@ def estimate_construction_cost(
             best_score = s
             best_score_material = m
     
-    recommended_cost = total_volume * best_score_material.cost_per_unit if best_score_material else 0
+    # Get AI cost for recommended material
+    if best_score_material:
+        recommended_estimate = cost_estimator.estimate_cost(
+            material=best_score_material.name,
+            grade='Standard',
+            volume_m3=total_volume,
+            transport_distance_km=30.0,
+            labor_intensity_score=5.0,
+            market_volatility=1.0
+        )
+        if recommended_estimate.get('is_ai_generated', False):
+            recommended_cost = recommended_estimate['predicted_cost']
+        else:
+            recommended_cost = total_volume * best_score_material.cost_per_unit
+    else:
+        recommended_cost = 0
     
     return cost_estimates, round(recommended_cost, 2)
 
